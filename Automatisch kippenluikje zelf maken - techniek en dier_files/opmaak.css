@@ -1,0 +1,70 @@
+@charset "utf-8";
+/* CSS Document */
+
+html { 
+	background: url(hoofdscherm.jpg) no-repeat center center fixed; 
+	-webkit-background-size: cover;
+	-moz-background-size: cover;
+	-o-background-size: cover;
+	background-size: cover;
+}
+		
+.topcontainer {
+	width: 1200px;
+	height: 768px;
+	border: thin;
+}
+
+.topcell {
+	width: 100%;
+	height: 110px;
+	padding-top: 4px;
+	padding-bottom: 4px;
+	padding-left: 2px;
+	padding-right: 2px;
+	background-image: url('topbalk.jpg');
+	background-size: 100% 100%;
+	background-repeat: no-repeat;
+	border-color: #000;
+	border-style: solid;
+	border-width: 2px;
+}
+
+.midcell {
+	background-color: #dfd8c1;
+	border-color: #000;
+	border-style: solid;
+	border-width: 2px;
+	font-family: Verdana;
+	font-size: 14px;
+	padding-top: 10px;
+	padding-bottom: 4px;
+	padding-left: 40px;
+	padding-right: 10px;
+        vertical-align: top; 
+}
+
+.menuknop {
+	background-color: transparent;
+	background-image: url('knop1.png');
+	border-style: none;
+	color: white;
+	padding-top: 5px;
+	text-align: center;
+	text-decoration: none;
+	display: inline-block;
+	font-size: 14px;
+	font-family: Verdana;
+	font-weight: bold;
+	width: 86px;
+	height: 43px;
+}
+.menuknop:hover {
+	color: hsla(206,54%,87%,1.00);
+	transform: translateY(2px);
+}
+.menuknop:active {
+	color: yellow;
+	transform: translateY(4px);
+}
+

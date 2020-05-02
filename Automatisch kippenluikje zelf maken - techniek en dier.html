@@ -1,0 +1,289 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<!-- saved from url=(0040)https://techniekendier.nl/kippenluik.php -->
+<html lang="nl" xml:lang="nl" xmlns="http://www.w3.org/1999/xhtml"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="referrer" content="unsafe-url">
+<meta name="robots" content="index, follow">
+<meta name="description" content="West-Friesland, Andijk">
+<meta name="language" content="nl">
+<meta name="google-site-verification" content="E_9B9wezGW30WWL6qpjAij0quN1iAHoW2zIGYezf7kY">
+
+<link rel="stylesheet" type="text/css" href="./Automatisch kippenluikje zelf maken - techniek en dier_files/opmaak.css">
+<link rel="icon" type="image/png" href="https://techniekendier.nl/favicon.png">
+<title>Automatisch kippenluikje zelf maken - techniek en dier</title>      
+</head>
+
+<body>
+    
+<center>
+<table class="topcontainer"> 
+<tbody><tr>  
+	<td class="topcell">
+	    <table width="100%" height="100%" border="0" cellspacing="0" cellpadding="0">
+    		<tbody><tr>
+		      <td align="right" rowspan="2" width="240"><a href="https://techniekendier.nl/index.php"><img src="./Automatisch kippenluikje zelf maken - techniek en dier_files/logo.png" alt="home" width="223" height="115" border="0"></a></td>
+		      <td align="right" valign="top"><div style="font-size: x-small; color: grey;">Zicht op Andijk</div></td>
+    		</tr>
+            <tr>
+		      <td valign="bottom" style="padding-left: 10px">					<a href="https://techniekendier.nl/index.php" class="menuknop">Hoofd<br>pagina</a>
+					<a href="https://techniekendier.nl/kippencam.php" class="menuknop">Kippen<br>Webcam</a>
+					<a href="https://techniekendier.nl/kippenluik.php" class="menuknop">Kippen<br>luikje</a>
+					<a href="https://techniekendier.nl/kippenbroeds.php" class="menuknop">Broedse<br>Kip</a>
+					<a href="https://techniekendier.nl/kippeneilegdetector.php" class="menuknop">Ei-leg<br>Detector</a>
+					<a href="https://techniekendier.nl/broeden.php" class="menuknop">Eieren<br>broeden</a>
+					<a href="https://techniekendier.nl/broedmachine.php" class="menuknop">Broed<br>Machine</a>
+					<a href="https://techniekendier.nl/kippendrinksysteem.php" class="menuknop">Drink<br>Systeem</a>
+         	</td>
+    		</tr>
+		</tbody></table>
+    </td>
+ </tr>
+ <tr>
+	<td class="midcell">
+  <br>
+ <h2>Automatisch kippenluikje</h2>
+ <p>Hier op het platteland van Andijk komen soms vossen voorbij die niet zullen twijfelen om onze dames te verschalken. En dat willen we niet.<br>
+   Het kippenhok wordt daarom na het op stok gaan van de kippen hermetisch afgesloten en 's ochtends trekken we het luikje weer open. <br>
+   Soms liggen wij wat langer op bed en zitten de dames ongeduldig voor het luik te wachten om naar buiten te gaan. Beetje zielig.<br>
+   Een mooi projectje om te automatiseren en te zorgen dat ze bij dag en dauw de buitenren in kunnen.<br>
+   <br>
+   Natuurlijk zijn er voor meer dan 130 euro automatische kippenluikjes te koop die je met een timer kan instellen. <br>
+   Op het internet kan je ze vinden onder Chicken Guard,  Anti-vos kippenhokopener, VSBb - hokopener, automatische hokopener etc.<br>
+   De dure modellen hebben een lichtsensor en veelal een combinatie van beiden. Allemaal veel te duur, ik ga zelf iets maken.<br>
+   Technisch gezien stelt het namelijk niets voor. Een motortje met vertraging, een lichtsensor en een Arduino Nano is genoeg.<br>
+   <br>
+	Mijn eisen zijn heel eenvoudig. Het luikje moet helemaal alleen kunnen draaien en zichzelf aanpassen aan het jaargetijde.<br>
+   Dit is vooral belangrijk in de zomer als het al om 5 uur licht is en de kippen dolgraag naar buiten willen als wij nog slapen. <br>
+   In de winter is het pas om 8 uur licht en zitten de kippen lang op stok. Het luikje moet dan wel dicht blijven.<br>
+   Ik ga er vanuit dat vossen alleen 's nachts jagen...<br>
+   <br>
+   Gelijk maar bij onze Chinese vriendjes een motortje, een controller, lagers, as koppel en magneetswitchen besteld. <br>
+   Twee weken later was alles in huis en het knutselen kon beginnen.<br><br>
+ 	<img src="./Automatisch kippenluikje zelf maken - techniek en dier_files/motor.jpg" height="140" width="140"> <img src="./Automatisch kippenluikje zelf maken - techniek en dier_files/controller.jpg" height="140" width="140">&nbsp;
+ 	<img src="./Automatisch kippenluikje zelf maken - techniek en dier_files/lager.jpg" height="140" width="140"> <img src="./Automatisch kippenluikje zelf maken - techniek en dier_files/coupler.jpg" height="140" width="140">&nbsp;
+ 	<img src="./Automatisch kippenluikje zelf maken - techniek en dier_files/magneet.png" height="140" width="140"> <img src="./Automatisch kippenluikje zelf maken - techniek en dier_files/ldr.png" height="140" width="140"><br>
+   <br>
+   Zelf dacht ik dat een stappenmotortje wel geschikt zou zijn want die is lekker sterk en precies te positioneren.<br>
+   maar het nadeel van een stappenmotor is dat hij onder spanning moet blijven omdat anders de rem niet werkt.<br>
+   Zonder rem valt het luikje onder zijn eigen gewicht weer net zo gemakkelijk naar beneden. (trespa luikje)<br>
+   Het motortje werd daarom een standaard 12 volt motor met vertraging. Die kan ook links en rechts om en is beresterk met genoeg rem.<br>
+   Ik kon er meer dan 10 kg aanhangen en nog gebeurde er niets. Meer dan genoeg voor het kippenluikje van 1 kg trespaplaat. <br>
+   Ook neemt dit motortje weinig stroom en is daarmee uit een netadapter te voeden. Alleen is de positionering niet erg precies.<br>
+   Maar dat is op te lossen door een sensor aan te brengen die signaleert of het luikje helemaal open staat. Ik koos voor een magneetschakelaar.<br>
+   Voor de lagers gebruikte ik zogenaamde Pillow Bearings en als asje een stukje gordijnroede ergens uit de schuur.<br>
+   Als laatste een lichtgevoelige weerstand uit de rommelbak om de hoeveelheid daglicht te meten wat alles compleet maakte.<br>
+   <br>
+   Nadat een proefopstelling prima werkte heb ik de motor op een plankje gemonteerd en via de coupler een asje eraan.<br>
+   Dit asje draait tussen twee lagertjes om de zijwaartse krachten op te vangen en de weerstand te verlagen.<br>
+   Naast de motor uiteraard de L298n controller en een Arduino Nano. Als laatste de magneetschakelaar en de lichtgevoelige weerstand.<br><br>
+   <img src="./Automatisch kippenluikje zelf maken - techniek en dier_files/besturing.jpg" height="350" width="662"><br><br>
+ 		
+   Dan de besturing. Dat lijkt een lastige maar uiteindelijk blijkt het heel eenvoudig te zijn en ik hou ervan om het eenvoudig te houden.<br>
+   Om de minuut wordt de lichtintensiteit op de sensor gemeten en als deze 5 keer achter elkaar onder een waarde blijft is het kennelijk donker en gaat het luikje dicht.
+   Als 5 aansluitende metingen de intensiteit boven een waarde blijft is het kennelijk licht en blijft gaat het luikje open. Daartussen gebeurt er niets.<br>
+	Voor de 5 metingen heb ik gekozen om te voorkomen dat het luikje open gaat bij bv bliksem of sluit als er een mug op sensor gaat zitten ofzo.<br>
+	Het aantal metingen en de licht-donker waarden kan je in de software aanpassen voor de juiste waarden is het eenmalig een beetje zoeken.<br>
+   <br>
+   Dan wordt het licht, het motortje blijft het luikje omhoog draaien totdat de magneetschakelaar geactiveerd wordt.<br>
+   Naar beneden gaat op basis van tijd. Het luikje wordt omhoog of omlaag gerolt met 2,6 seconden per centimeter heb ik gemeten.<br>
+   Het luikje moet 36 cm overbruggen dus na 94 seconden is het luikje beneden. Lekker langzaam voorkomt dat een kip klem raakt.<br>
+   Om te zorgen dat het luikje op de grond rust en niet aan de kabel hangt heb ik de tijd op 100 seconden gezet voor wat extra speling.<br>
+   <br>
+   Na enig proefdraaien heb ik het luikje in het nachthok gemonteerd en gaat het verder allemaal (alweer jaren) vanzelf.<br>
+   Omdat het lichtgestuurd is er geen gedonder met schakelklokken of andere periodieke aanpassingen en heb ik er geen omkijken aan.<br>
+	Eerlijkheid gebied me te zeggen dat we elke avond wel even kijken of alles binnen zit en het luik dicht is gegaan.<br>
+	Ondanks deze techniek blijven we waakzaam. (Hiervoor hangt een <a href="https://techniekendier.nl/kippencam.php">camera in het hok</a> die we kunnen bekijken op de televisie. Bizar, ik weet het...)<br>
+   <br>
+   Hieronder zie je het oprolmechanisme met waslijn als kabel in plaats van dun visdraad wat de commerciele doen.<br>
+   Aan de rechterkant alles vastgeschroefd zonder afdekkap. De draden die naar beneden lopen gaan naar de magneetschakelaar en de sensor.<br>
+   <br> 
+   <img src="./Automatisch kippenluikje zelf maken - techniek en dier_files/takel.jpg" height="246" width="349">&gt;&nbsp;<img src="./Automatisch kippenluikje zelf maken - techniek en dier_files/besturing2.jpg" height="246" width="349"><br>
+   <br>
+   Hieronder een foto van het geheel. De lichtsensor zit in een waterdicht transparant bakje en hangt onder het afdakje.<br>
+   Daarnaast de foto waarop duidelijk de magneetschakelaars te zien zijn en het luik in gesloten toestand. <br>
+   De magneetswitch zit vast op de wand, de magneet zelf zit op het luikje met wat kit en tie-rips.<br>
+   En rechts de motor met besturing afgewerkt in een behuizing. Wachten op het donker worden en de kip kijkt door het luikje.<br>
+   <br>
+ 	<img src="./Automatisch kippenluikje zelf maken - techniek en dier_files/lichtsensor.jpg" height="326" width="371">&nbsp;
+ 	<img src="./Automatisch kippenluikje zelf maken - techniek en dier_files/deur.jpg" height="326" width="244">&nbsp;
+ 	<img src="./Automatisch kippenluikje zelf maken - techniek en dier_files/automatisch_kippenluik.jpg" height="326" width="244"><br>
+ 	<br>
+ 	De kosten voor het luikje ligt rond de 15 euro aan nieuw materiaal, wat restantjes draad en hout en een paar uurtjes knutselen en programmeren.<br>
+   Voor weinig geld en veel plezier een prachtig digitaal gestuurde automatisch kippenluikje!<br><br>
+ 
+ Aansluitschema: (zie broncode voor exacte arduino pinnen)
+ </p><p><img style="width: 526px; height: 460px;" alt="" src="./Automatisch kippenluikje zelf maken - techniek en dier_files/kippenluikschema.png"></p>
+ <p><br>
+ </p>
+ <p>De software voor de arduino Nano:</p>
+ <p> <textarea name="textarea" cols="120" rows="16" readonly="readonly" class="broncode" id="textarea">/*
+  Kippenluik
+  ground vanaf controller
+  Vin vanaf 5 volt controller
+*/
+
+int LuikGoedemorgen = 290;        // lichtwaarde wanneer luik open
+int LuikWelterusten = 35;         // lichtwaarde wanneer luik dicht
+int LuikPulsen = 100;             // aantal pulsen om Luik neer te laten gaan (open gaat tot magnetische switch) 1 cm=2,6 seconden. 36 cm = 94 seconden ongeveer 100 pulsen voor de zekerheid
+
+const int LuikMetingen = 5;       // het gemiddelde van aantal metingen waarop beslist wordt
+const int intervalwaarde = 60;    // aantal seconden pause tussen metingen
+const int motortin1Pin = 4;       // controller in1  D4
+const int motortin2Pin = 5;       // controller in2  D5
+const int magneetPin = A1;        // magneetswitch   A1
+const int ldrPin = A2;            // LDR             A2
+
+// variabelen
+int intervalteller = 0;
+int Luikstatus = 1;               // luik status 1=open, 0=dicht
+int intMeetMoment = 0;            // positie in array met lichtmetingen
+uint16_t Licht[LuikMetingen];     // array met de lichtmetingen
+
+
+/*************************/
+void setup(void) {
+  /*************************/
+
+  Serial.begin(57600);
+  Serial.println("Kippenluik. Copyright Techniek &amp; Dier");
+
+  pinMode(motortin1Pin, OUTPUT);
+  pinMode(motortin2Pin, OUTPUT);
+  pinMode(ldrPin, INPUT);           //ldr+plus en ldr+port+10k
+  pinMode(magneetPin, INPUT_PULLUP);       //tussen 0 en de pin
+
+  // meetwaarde array vullen met een default gemiddelde
+  for (int teller = 0; teller &lt; LuikMetingen; teller++) {
+    Licht[teller] = (LuikGoedemorgen + LuikWelterusten) / 2;
+  }
+
+  // variablen setten
+  Luikstatus = 0;
+  intMeetMoment = 0;
+
+  // bij boot wordt 5 seconden gesloten en daarna geopend ivm sync van de motor en veiligste modus.
+  Testluik();
+
+}
+
+/*************************/
+void Testluik(void) {
+  /*************************/
+  digitalWrite(motortin1Pin, LOW);
+  digitalWrite(motortin2Pin, HIGH);
+  for (int teller = 0; teller &lt; 5; teller++) delay(1000);
+  OpenLuik();
+}
+
+/*************************/
+void SluitLuik(void) {
+  /*************************/
+  digitalWrite(motortin1Pin, LOW);
+  digitalWrite(motortin2Pin, HIGH);
+  for (int teller = 0; teller &lt; LuikPulsen; teller++) delay(1000);
+  // motor uit
+  digitalWrite(motortin1Pin, LOW);
+  digitalWrite(motortin2Pin, LOW);
+}
+
+/*************************/
+void OpenLuik(void) {
+  /*************************/
+  while (digitalRead(magneetPin) == 0) { //lees de switch uit 0=nog niet boven
+    digitalWrite(motortin1Pin, HIGH);
+    digitalWrite(motortin2Pin, LOW);
+  }
+  // motor uit
+  digitalWrite(motortin1Pin, LOW);
+  digitalWrite(motortin2Pin, LOW);
+}
+
+/*************************/
+void ProcesLuik(void) {
+  /*************************/
+
+  uint16_t gemiddelde = 0;
+
+  //haal lichtmeting op
+  Licht[intMeetMoment] = analogRead(ldrPin); // gemeten waarde in de array zetten
+  intMeetMoment++;                         // verhoog positie in de array
+  if (intMeetMoment &gt;= LuikMetingen) intMeetMoment = 0; // als array gevuld is dan weer vooraf beginnen met vullen
+
+  // gemiddelde van de array berekenen
+  gemiddelde = 0;
+  for (int teller = 0; teller &lt; LuikMetingen; teller++) {
+    gemiddelde += Licht[teller];
+  }
+  gemiddelde = gemiddelde / LuikMetingen;
+
+  // beslissen of luik open, dicht of blijven moet
+  if ((gemiddelde &lt;= LuikWelterusten) &amp;&amp; (digitalRead(magneetPin) == 1)) { // luik moet openstaan 1=luik is bovenaan
+    SluitLuik();
+    Luikstatus = 1;
+  }
+
+  if (gemiddelde &gt;= LuikGoedemorgen) {
+    OpenLuik();
+    Luikstatus = 0;
+  }
+
+}
+
+/*************************/
+void loop(void) {
+  /*************************/
+
+  //taakafhandeling. Moet elke minuut
+  intervalteller = 0;
+  while (intervalteller &lt; intervalwaarde) {
+    delay(1000);
+    intervalteller++;
+    Serial.print("LDR waarde: ");
+    Serial.print(analogRead(ldrPin));
+    Serial.print("  Luikstatus: ");
+    Serial.print(Luikstatus);
+    Serial.print("  Magneetswitch: ");
+    Serial.println(digitalRead(magneetPin));
+
+  }
+
+  ProcesLuik();
+}
+      </textarea></p>Download <a href="https://techniekendier.nl/kippen/kippenluik.ino">kippenluik.ino</a>. 
+    <p><br>
+    </p>
+    <p>Boodschappenlijstje:<br>
+      ---------------------------------<br>
+      € 8,08&nbsp;&nbsp;&nbsp;DC motortje (XD-37GB520 of vergelijkbaar)<br>
+      € 1,25&nbsp;&nbsp;&nbsp;motor controller (L298N)<br>
+      € 1,46&nbsp;&nbsp;&nbsp;2x pillow lagers<br>
+      € 1,55&nbsp;&nbsp;&nbsp;as koppel (6mm)<br>
+      € 1,08&nbsp;&nbsp;&nbsp;magneetswitch (maakcontact, dus sluit als de magneet in de buurt is)<br>
+      € 0,20&nbsp;&nbsp;&nbsp;lichtgevoelige weerstand<br>
+      € 1,97&nbsp;&nbsp;&nbsp;Arduino Nano<br>
+      € 0,00&nbsp;&nbsp;&nbsp;stukje gordijnroede, stukjes hout, netadapter, wat draad, stukje waslijn. <br>
+      =====<br>
+      € 15,59&nbsp;&nbsp; </p>
+    <p><br>
+    </p>
+    Tenslotte nog dit..<br>
+    Via mail krijg ik van sommigen de vraag of ik even de linkjes naar de chinezen wil opsturen, da's makkelijk anders moeten ze zelf zo zoeken.<br>
+    Er waren er zelfs die vroegen of ik alles voor ze wilde bestellen, in elkaar knutselen en dan naar ze opsturen! Snel ook nog.<br>
+    Allemaal gratis natuurlijk want geen geld, kippen waren opgegeten, heel zwaar leven en nog meer van dat soort tranentrekkers. <br>
+    Gelukkig heb ik wel wat beters te doen en geen tijd enzo dan dus vraag me niet.<br>
+<br>
+<p>(laatste update 6 januari 2018)</p>
+        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+       <tbody><tr>
+          <td width="140px">&nbsp;</td>
+          <td valign="top" align="center">
+            <div style="color: grey; font-size: x-small;">Webdesign door mezelf
+              en alle content is auteursrechtelijk beschermd.</div>
+          </td>
+        </tr>
+     </tbody></table>
+  
+
+
+</td></tr></tbody></table></center><div id="ConnectiveDocSignExtentionInstalled" data-extension-version="1.0.4"></div><div id="eid-chrome-extension-is-installed"></div></body></html>

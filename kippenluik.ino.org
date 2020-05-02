@@ -1,0 +1,133 @@
+/*
+  Kippenluik
+  ground vanaf controller
+  Vin vanaf 5 volt controller
+*/
+
+int LuikGoedemorgen = 290;        // lichtwaarde wanneer luik open
+int LuikWelterusten = 35;         // lichtwaarde wanneer luik dicht
+int LuikPulsen = 100;             // aantal pulsen om Luik neer te laten gaan (open gaat tot magnetische switch) 1 cm=2,6 seconden. 36 cm = 94 seconden ongeveer 100 pulsen voor de zekerheid
+
+const int LuikMetingen = 5;       // het gemiddelde van aantal metingen waarop beslist wordt
+const int intervalwaarde = 60;    // aantal seconden pause tussen metingen
+const int motortin1Pin = 4;       // controller in1  D4
+const int motortin2Pin = 5;       // controller in2  D5
+const int magneetPin = A1;        // magneetswitch   A1
+const int ldrPin = A2;            // LDR             A2
+
+// variabelen
+int intervalteller = 0;
+int Luikstatus = 1;               // luik status 1=open, 0=dicht
+int intMeetMoment = 0;            // positie in array met lichtmetingen
+uint16_t Licht[LuikMetingen];     // array met de lichtmetingen
+
+
+/*************************/
+void setup(void) {
+  /*************************/
+
+  Serial.begin(57600);
+  Serial.println("Kippenluik. Copyright Techniek & Dier");
+
+  pinMode(motortin1Pin, OUTPUT);
+  pinMode(motortin2Pin, OUTPUT);
+  pinMode(ldrPin, INPUT);           //ldr+plus en ldr+port+10k
+  pinMode(magneetPin, INPUT_PULLUP);       //tussen 0 en de pin
+
+  // meetwaarde array vullen met een default gemiddelde
+  for (int teller = 0; teller < LuikMetingen; teller++) {
+    Licht[teller] = (LuikGoedemorgen + LuikWelterusten) / 2;
+  }
+
+  // variablen setten
+  Luikstatus = 0;
+  intMeetMoment = 0;
+
+  // bij boot wordt 5 seconden gesloten en daarna geopend ivm sync van de motor en veiligste modus.
+  Testluik();
+
+}
+
+/*************************/
+void Testluik(void) {
+  /*************************/
+  digitalWrite(motortin1Pin, LOW);
+  digitalWrite(motortin2Pin, HIGH);
+  for (int teller = 0; teller < 5; teller++) delay(1000);
+  OpenLuik();
+}
+
+/*************************/
+void SluitLuik(void) {
+  /*************************/
+  digitalWrite(motortin1Pin, LOW);
+  digitalWrite(motortin2Pin, HIGH);
+  for (int teller = 0; teller < LuikPulsen; teller++) delay(1000);
+  // motor uit
+  digitalWrite(motortin1Pin, LOW);
+  digitalWrite(motortin2Pin, LOW);
+}
+
+/*************************/
+void OpenLuik(void) {
+  /*************************/
+  while (digitalRead(magneetPin) == 0) { //lees de switch uit 0=nog niet boven
+    digitalWrite(motortin1Pin, HIGH);
+    digitalWrite(motortin2Pin, LOW);
+  }
+  // motor uit
+  digitalWrite(motortin1Pin, LOW);
+  digitalWrite(motortin2Pin, LOW);
+}
+
+/*************************/
+void ProcesLuik(void) {
+  /*************************/
+
+  uint16_t gemiddelde = 0;
+
+  //haal lichtmeting op
+  Licht[intMeetMoment] = analogRead(ldrPin); // gemeten waarde in de array zetten
+  intMeetMoment++;                         // verhoog positie in de array
+  if (intMeetMoment >= LuikMetingen) intMeetMoment = 0; // als array gevuld is dan weer vooraf beginnen met vullen
+
+  // gemiddelde van de array berekenen
+  gemiddelde = 0;
+  for (int teller = 0; teller < LuikMetingen; teller++) {
+    gemiddelde += Licht[teller];
+  }
+  gemiddelde = gemiddelde / LuikMetingen;
+
+  // beslissen of luik open, dicht of blijven moet
+  if ((gemiddelde <= LuikWelterusten) && (digitalRead(magneetPin) == 1)) { // luik moet openstaan 1=luik is bovenaan
+    SluitLuik();
+    Luikstatus = 1;
+  }
+
+  if (gemiddelde >= LuikGoedemorgen) {
+    OpenLuik();
+    Luikstatus = 0;
+  }
+
+}
+
+/*************************/
+void loop(void) {
+  /*************************/
+
+  //taakafhandeling. Moet elke minuut
+  intervalteller = 0;
+  while (intervalteller < intervalwaarde) {
+    delay(1000);
+    intervalteller++;
+    Serial.print("LDR waarde: ");
+    Serial.print(analogRead(ldrPin));
+    Serial.print("  Luikstatus: ");
+    Serial.print(Luikstatus);
+    Serial.print("  Magneetswitch: ");
+    Serial.println(digitalRead(magneetPin));
+
+  }
+
+  ProcesLuik();
+}
