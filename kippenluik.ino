@@ -9,12 +9,6 @@
 
 */
 
-bool started = false;
-bool ok = true;                   // alles ok
-
-int LuikOpenMS = 1300;            // aantal milliseconden om Luik open te laten gaan
-int LuikSluitSeconden = 20;       // maximaal aantal seconden om Luik te sluiten
-
 const int LuikGoedemorgen = 600;  // lichtwaarde wanneer luik open
 const int LuikWelterusten = 35;   // lichtwaarde wanneer luik dicht
 
@@ -24,6 +18,12 @@ const int motortin1Pin = 4;       // controller in1  D4
 const int motortin2Pin = 5;       // controller in2  D5
 const int magneetPin = A1;        // magneetswitch   A1
 const int ldrPin = A2;            // LDR             A2
+
+bool started = false;
+bool ok = true;                   // alles ok
+
+int LuikOpenMS = 1300;            // aantal milliseconden om Luik open te laten gaan
+int LuikSluitMS = 3000;           // maximaal aantal milliseconden om Luik te sluiten
 
 // variabelen
 int intMeetMoment = 0;            // positie in array met lichtmetingen
@@ -44,7 +44,10 @@ void setup(void) {
     pinMode(motortin2Pin, OUTPUT);
     pinMode(ldrPin, INPUT);           //ldr+plus en ldr+port+10k
     pinMode(magneetPin, INPUT_PULLUP);       //tussen 0 en de pin
+    pinMode(LED_BUILTIN, OUTPUT);
 
+    SetLed();
+    
     // Eerst 60 seconden de kans geven om commando's te geven
     for (int i = 60; i > 0; i--)
     {
@@ -58,30 +61,39 @@ void setup(void) {
   
     Serial.println("Start kippenluik");
   
-    SluitLuik();
+    SluitLuik(); // Door de magneetschakelaar weten hierna zeker dat het luik gesloten is
   
     ProcesLuik(true); // opent het luik indien het licht is en laat het gesloten indien het donker is
   }
+}
+
+void SetLed(void)
+{
+  if (ok)
+    digitalWrite(LED_BUILTIN, LOW);
+  else
+    digitalWrite(LED_BUILTIN, HIGH);  
 }
 
 bool IsLuikGesloten() {
   return digitalRead(magneetPin) == 0;
 }
 
-/*************************/
-void SluitLuik1(int MaximumSeconden) {
-  /*************************/
-  Serial.println("Sluiten luik");
-  unsigned long StartTime = millis();
-  int ElapsedTime = 0;
-  while (!IsLuikGesloten() && ElapsedTime < MaximumSeconden) {
-    digitalWrite(motortin1Pin, HIGH);
-    digitalWrite(motortin2Pin, LOW);
-    unsigned long CurrentTime = millis();
-    ElapsedTime = (CurrentTime - StartTime) / 1000;
-  }
-  // motor uit
+void MotorUit(void)
+{
   digitalWrite(motortin1Pin, LOW);
+  digitalWrite(motortin2Pin, LOW);
+}
+
+void MotorOpenLuik(void)
+{
+  digitalWrite(motortin1Pin, LOW);
+  digitalWrite(motortin2Pin, HIGH);  
+}
+
+void MotorSluitLuik(void)
+{
+  digitalWrite(motortin1Pin, HIGH);
   digitalWrite(motortin2Pin, LOW);
 }
 
@@ -89,23 +101,41 @@ void SluitLuik1(int MaximumSeconden) {
 void SluitLuik(void) {
   /*************************/
 
-  SluitLuik1(LuikSluitSeconden);
+  Serial.println("Sluiten luik");
 
-  // Voor het geval dat de motor een beetje terugdraait en dus het luik weer een stukje open gaat
-  delay(2000);
-  SluitLuik1(1);
+  if (!IsLuikGesloten()) {
+    unsigned long StartTime = millis();
+    int ElapsedTime = 0;
+    while (!IsLuikGesloten() && ElapsedTime < LuikSluitMS) { // sluiten totdat magneetschakelaar zegt dat deur gesloten is maar ook max LuikSluitMS milliseconden (veiligheid)
+      MotorSluitLuik();
+      unsigned long CurrentTime = millis();
+      ElapsedTime = CurrentTime - StartTime;
+    }
 
-  ok = false;
-  for (int i = 0; i < 10 && !ok; i++) {
-    delay(100);
-    ok = IsLuikGesloten();
-    if (!ok)
-      Serial.println("Luik niet gesloten, nog eens controleren");
+    MotorUit();
+
+    delay(500); // wacht een halve seconde
+
+    MotorSluitLuik(); // sluit nog eens goed het luik. Dit kan omdat een elastiek wordt gebruikt en die dus ook nog een beet kan rekken
+
+    delay(50); // voor maar 50 ms zodat deurtje goed aangespannen is
+
+    MotorUit();
+
+    // controle luik gesloten
+    ok = false;
+    for (int i = 0; i < 10 && !ok; i++) {
+      delay(100);
+      ok = IsLuikGesloten();
+      if (!ok)
+        Serial.println("Luik niet gesloten, nog eens controleren");
+    }
+    SetLed();
+    if (ok)
+      Serial.println("Luik gesloten");
+    else
+      Serial.println("Oops, luik *niet* gesloten");
   }
-  if (ok)
-    Serial.println("Luik gesloten");
-  else
-    Serial.println("Oops, luik *niet* gesloten");
 }
 
 /*************************/
@@ -113,14 +143,13 @@ void OpenLuik(void) {
   /*************************/
   Serial.println("Openen luik");
   if (IsLuikGesloten()) {
-    digitalWrite(motortin1Pin, LOW);
-    digitalWrite(motortin2Pin, HIGH);
-    delay(LuikOpenMS);
+    MotorOpenLuik();
+    delay(LuikOpenMS); // Er is geen detectie op luik volledig open daarom wordt de motor vast LuikOpenMS milliseconden aangezet en dan zou het luik open moeten zijn
   }
-  // motor uit
-  digitalWrite(motortin1Pin, LOW);
-  digitalWrite(motortin2Pin, LOW);
+  
+  MotorUit();
 
+  // controle luik open
   ok = false;
   for (int i = 0; i < 10 && !ok; i++) {
     delay(100);
@@ -128,7 +157,8 @@ void OpenLuik(void) {
     if (!ok)
       Serial.println("Luik niet open, nog eens controleren");
   }
-    
+
+  SetLed();
   if (ok)
     Serial.println("Luik open");
   else
@@ -139,9 +169,9 @@ void OpenLuik(void) {
 void ProcesLuik(bool init) {
   /*************************/
 
-  uint16_t gemiddelde;
   int teller;
 
+  // doe een lichtmeting
   if (init)
     teller = LuikMetingen;
   else
@@ -152,10 +182,17 @@ void ProcesLuik(bool init) {
     intMeetMoment++;                           // verhoog positie in de array
     if (intMeetMoment >= LuikMetingen) intMeetMoment = 0; // als array gevuld is dan weer vooraf beginnen met vullen
   }
+
+  ProcesLuikOpenSluit(true);
+}
+
+void ProcesLuikOpenSluit(bool openen)
+{
+  uint16_t gemiddelde;
   
   // gemiddelde van de array berekenen
   gemiddelde = 0;
-  for (teller = 0; teller < LuikMetingen; teller++)
+  for (int teller = 0; teller < LuikMetingen; teller++)
     gemiddelde += Licht[teller];
   
   gemiddelde = gemiddelde / LuikMetingen;
@@ -167,7 +204,7 @@ void ProcesLuik(bool init) {
   else if (gemiddelde <= LuikWelterusten)
     SluitLuik();
 
-  else if (gemiddelde >= LuikGoedemorgen)
+  else if (openen && gemiddelde >= LuikGoedemorgen)
     OpenLuik();
 }
 
@@ -179,6 +216,8 @@ void loop(void) {
   for (int intervalteller = intervalwaarde; intervalteller > 0; intervalteller--) {
     delay(1000);    
 
+    ProcesLuikOpenSluit(false); // 's nachts elke seconde controleren als luik nog steeds toe is. Indien niet dan laten sluiten
+    
     info(intervalteller);
 
     Command();
