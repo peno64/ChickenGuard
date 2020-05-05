@@ -21,6 +21,7 @@ const int ldrPin = A2;            // LDR             A2
 
 bool started = false;
 bool ok = true;                   // alles ok
+bool logit = false;
 
 int LuikOpenMS = 1300;            // aantal milliseconden om Luik open te laten gaan
 int LuikSluitMS = 3000;           // maximaal aantal milliseconden om Luik te sluiten
@@ -29,6 +30,8 @@ int LuikSluitMS = 3000;           // maximaal aantal milliseconden om Luik te sl
 int intMeetMoment = 0;            // positie in array met lichtmetingen
 uint16_t Licht[LuikMetingen];     // array met de lichtmetingen
 
+unsigned long TimeLuikOpen = 0;
+unsigned long TimeLuikGesloten = 0;
 
 /*************************/
 void setup(void) {
@@ -51,7 +54,7 @@ void setup(void) {
     // Eerst 60 seconden de kans geven om commando's te geven
     for (int i = 60; i > 0; i--)
     {
-        info(i);      
+        info(i, logit);      
   
         if (Command())
           i = 60; // Als er een commando is gegeven dan opnieuw 60 seconden wachten op een antwoord
@@ -89,12 +92,16 @@ void MotorOpenLuik(void)
 {
   digitalWrite(motortin1Pin, LOW);
   digitalWrite(motortin2Pin, HIGH);  
+
+  TimeLuikOpen = millis();
 }
 
 void MotorSluitLuik(void)
 {
   digitalWrite(motortin1Pin, HIGH);
   digitalWrite(motortin2Pin, LOW);
+
+  TimeLuikGesloten = millis();
 }
 
 /*************************/
@@ -107,8 +114,11 @@ void SluitLuik(void) {
     unsigned long StartTime = millis();
     int ElapsedTime = 0;
     while (!IsLuikGesloten() && ElapsedTime < LuikSluitMS) { // sluiten totdat magneetschakelaar zegt dat deur gesloten is maar ook max LuikSluitMS milliseconden (veiligheid)
-      MotorSluitLuik();
+      if (ElapsedTime == 0)
+        MotorSluitLuik();
       unsigned long CurrentTime = millis();
+      if (CurrentTime < StartTime)
+        StartTime = CurrentTime;
       ElapsedTime = CurrentTime - StartTime;
     }
 
@@ -218,7 +228,7 @@ void loop(void) {
 
     ProcesLuikOpenSluit(false); // 's nachts elke seconde controleren als luik nog steeds toe is. Indien niet dan laten sluiten
     
-    info(intervalteller);
+    info(intervalteller, logit);
 
     Command();
   }
@@ -226,29 +236,73 @@ void loop(void) {
   ProcesLuik(false);
 }
 
-void info(int intervalteller) {
-  if (intervalteller != 0) {  
-    Serial.print(intervalteller);
-    Serial.print(": ");
-  }
+void info(int intervalteller, bool dolog) {
+  char data[100];
+
+  if (dolog) {
+    if (intervalteller != 0) {  
+      Serial.print(intervalteller);
+      Serial.print(": ");
+    }
+    
+    Serial.print("LDR waarde: ");
+    Serial.print(analogRead(ldrPin));
   
-  Serial.print("LDR waarde: ");
-  Serial.print(analogRead(ldrPin));
+    Serial.print(", Luikstatus: ");
+    if (IsLuikGesloten())
+      Serial.print("toe");
+    else
+      Serial.print("open");
+  
+    Serial.print(", Open LDR waarde: ");
+    Serial.print(LuikGoedemorgen);
+  
+    Serial.print(", Toe LDR waarde: ");
+    Serial.print(LuikWelterusten);
+  
+    Serial.print(", Alles ok: ");
+    Serial.print(ok);
+  
+    unsigned long TimeNow = millis();
+    
+    Serial.print(", Tijd nu: ");
+  
+    sprintf(data, "%lu", TimeNow);
+    Serial.print(data);
+  
+    Serial.print(", Tijd open: ");
+    DiffTime(TimeLuikOpen, TimeNow);
+  
+    Serial.print(", Tijd toe: ");
+    DiffTime(TimeLuikGesloten, TimeNow);
+  
+    Serial.println();
+  }
+}
 
-  Serial.print(", Luikstatus: ");
-  if (IsLuikGesloten())
-    Serial.print("gesloten");
-  else
-    Serial.print("open");
+void DiffTime(unsigned long Time, unsigned long TimeNow)
+{
+  char data[100];
 
-  Serial.print(", Openen bij LDR waarde: ");
-  Serial.print(LuikGoedemorgen);
+  sprintf(data, "%lu", Time);
+  Serial.print(data);
 
-  Serial.print(", Sluiten bij LDR waarde: ");
-  Serial.print(LuikWelterusten);
-
-  Serial.print(", Alles ok: ");
-  Serial.println(ok);
+  if (TimeNow >= Time) {
+    unsigned long ms = TimeNow - Time;
+    unsigned long dagen = ms / 1000 / 60 / 60 / 24;
+    ms -= dagen * 24 * 60 * 60 * 1000;
+    unsigned long uren = ms / 1000 / 60 / 60;
+    ms -= uren * 60 * 60 * 1000;
+    unsigned long minuten = ms / 1000 / 60;
+    ms -= minuten * 60 * 1000;
+    unsigned long seconden = ms / 1000;
+    ms -= seconden * 1000;
+    
+    Serial.print(" (");
+    sprintf(data, "%dd%d:%02d:%02d:%03d", (int)dagen, (int)uren, (int)minuten, (int)seconden, (int)ms);
+    Serial.print(data);
+    Serial.print(")");
+  }
 }
 
 String WachtOpInvoer(String Vraag) {
@@ -263,7 +317,8 @@ String WachtOpInvoer(String Vraag) {
 
 bool Command()
 {
-  Serial.println("Wachten op commando ");
+  if (logit)
+    Serial.println("Wachten op commando ");
   
   if (Serial.available())
   {
@@ -284,6 +339,11 @@ bool Command()
         Serial.print("LuikOpenMS: ");
         Serial.println(LuikOpenMS);
       }
+    }
+
+    else if (OntvangenAntwoord.substring(0, 1) == "L") // log toggle
+    {
+      logit = !logit;
     }
 
     else if (OntvangenAntwoord.substring(0, 1) == "O") // open
@@ -318,7 +378,7 @@ bool Command()
 
     else if (OntvangenAntwoord.substring(0, 1) == "I") // info
     {
-      info(0);
+      info(0, true);
       
       WachtOpInvoer("Druk enter om verder te gaan");
     }
@@ -330,6 +390,7 @@ bool Command()
       Serial.println("S: Sluit luik");
       Serial.println("R<aantal keer>: Herhaal openen en sluiten luik");
       Serial.println("I: Info");
+      Serial.println("L: Log toggle");
       Serial.println("H: Deze help");
       
       WachtOpInvoer("Druk enter om verder te gaan");
