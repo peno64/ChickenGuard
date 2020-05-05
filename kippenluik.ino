@@ -1,11 +1,21 @@
 /*
   Kippenluik
-  ground vanaf controller
-  Vin vanaf 5 volt controller
 
   Zorg ervoor dat het luik *niet* gesloten is de eerste keer en het systeem stelt zich automatisch goed in.
   De as zal beginnen draaien in de ene of andere richting en uiteindelijk de draad oprollen zodat het luik sluit.
   Bij openen draait de as de andere richting uit en dus de draad weer afrollen en dus het luik openen.
+
+  Bij starten wacht de arduino 1 minuut met normale werking om commando's in te kunnen geven.
+
+  Ook eens de normale werking is gestart kunnen nog commando's gegeven worden.
+  Merk op dat het default verbose is. Geef het L commando om info te tonen en terug L om weer verbose te gaan.
+  Het H commando geeft een help scherm met alle mogelijke commando's.
+
+  Merk op dat by default de arduino telkens reset als de monitor wordt gestart (Ctrl Shift M)
+  Dan ben je ook alle variabelen kwijt :-(
+
+  Dit kan opgelost worden door een condensator te plaatsen tussen de reset pin en gnd. Ik heb 0.47 µF genomen en dat werkt prima.
+  Merk op dat die wel moet losgekoppeld zijn als er een nieuwe sketch moet geupload worden. Anders krijg je een fout dat het uploaden niet gelukt is.
 
 */
 
@@ -38,7 +48,7 @@ void setup(void) {
   /*************************/
 
   Serial.begin(9600);
-  Serial.println("Kippenluik. Copyright Techniek & Dier aangepast door peno");
+  Serial.println("Kippenluik. original Copyright Techniek & Dier aangepast door peno");
 
   if (!started) {
     started = true;
@@ -50,6 +60,8 @@ void setup(void) {
     pinMode(LED_BUILTIN, OUTPUT);
 
     SetLed();
+
+    logit = true;
     
     // Eerst 60 seconden de kans geven om commando's te geven
     for (int i = 60; i > 0; i--)
@@ -61,7 +73,9 @@ void setup(void) {
   
         delay(1000);
     }
-  
+
+    logit = false;
+    
     Serial.println("Start kippenluik");
   
     SluitLuik(); // Door de magneetschakelaar weten hierna zeker dat het luik gesloten is
@@ -113,11 +127,15 @@ void SluitLuik(void) {
   if (!IsLuikGesloten()) {
     unsigned long StartTime = millis();
     int ElapsedTime = 0;
+    bool FirstTime = true;
     while (!IsLuikGesloten() && ElapsedTime < LuikSluitMS) { // sluiten totdat magneetschakelaar zegt dat deur gesloten is maar ook max LuikSluitMS milliseconden (veiligheid)
-      if (ElapsedTime == 0)
+      if (FirstTime)
+      {
+        FirstTime = false;
         MotorSluitLuik();
+      }
       unsigned long CurrentTime = millis();
-      if (CurrentTime < StartTime)
+      if (CurrentTime < StartTime) // overflow veiligheid
         StartTime = CurrentTime;
       ElapsedTime = CurrentTime - StartTime;
     }
@@ -126,7 +144,7 @@ void SluitLuik(void) {
 
     delay(500); // wacht een halve seconde
 
-    MotorSluitLuik(); // sluit nog eens goed het luik. Dit kan omdat een elastiek wordt gebruikt en die dus ook nog een beet kan rekken
+    MotorSluitLuik(); // sluit nog eens goed het luik. Dit kan omdat een elastiek wordt gebruikt en die dus ook nog een beetje kan rekken
 
     delay(50); // voor maar 50 ms zodat deurtje goed aangespannen is
 
