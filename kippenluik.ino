@@ -26,11 +26,14 @@ const int LuikMetingen = 5;       // het gemiddelde van aantal metingen waarop b
 const int intervalwaarde = 60;    // aantal seconden pause tussen metingen
 const int motortin1Pin = 4;       // controller in1  D4
 const int motortin2Pin = 5;       // controller in2  D5
+const int LEDClosedPin = 6;       // green LED - door closed  D6
+const int LEDOpenPin = 7;         // red LED - door open D7
 const int magneetPin = A1;        // magneetswitch   A1
 const int ldrPin = A2;            // LDR             A2
 
 bool started = false;
 bool ok = true;                   // alles ok
+bool toggle = false;
 bool logit = false;
 
 int LuikOpenMS = 1300;            // aantal milliseconden om Luik open te laten gaan
@@ -42,6 +45,10 @@ uint16_t Licht[LuikMetingen];     // array met de lichtmetingen
 
 unsigned long TimeLuikOpen = 0;
 unsigned long TimeLuikGesloten = 0;
+
+int H = 0;
+int M = 0;
+unsigned long HMtime = 0;
 
 /*************************/
 void setup(void) {
@@ -58,6 +65,10 @@ void setup(void) {
     pinMode(ldrPin, INPUT);           //ldr+plus en ldr+port+10k
     pinMode(magneetPin, INPUT_PULLUP);       //tussen 0 en de pin
     pinMode(LED_BUILTIN, OUTPUT);
+    digitalWrite(LED_BUILTIN, LOW);
+    pinMode(LEDOpenPin, OUTPUT);
+    digitalWrite(LEDOpenPin, LOW);
+    digitalWrite(LEDClosedPin, LOW);
 
     SetLed();
 
@@ -159,8 +170,14 @@ void SluitLuik(void) {
         Serial.println("Luik niet gesloten, nog eens controleren");
     }
     SetLed();
-    if (ok)
+
+    digitalWrite(LEDOpenPin, LOW);
+    digitalWrite(LEDClosedPin, LOW);
+    
+    if (ok) {
       Serial.println("Luik gesloten");
+      digitalWrite(LEDClosedPin, HIGH);  
+    }
     else
       Serial.println("Oops, luik *niet* gesloten");
   }
@@ -187,8 +204,14 @@ void OpenLuik(void) {
   }
 
   SetLed();
-  if (ok)
+
+  digitalWrite(LEDOpenPin, LOW);
+  digitalWrite(LEDClosedPin, LOW);
+  
+  if (ok) {
+    digitalWrite(LEDOpenPin, HIGH);
     Serial.println("Luik open");
+  }
   else
     Serial.println("Oops, luik *niet* open");
 }
@@ -245,6 +268,18 @@ void loop(void) {
     delay(1000);    
 
     ProcesLuikOpenSluit(false); // 's nachts elke seconde controleren als luik nog steeds toe is. Indien niet dan laten sluiten
+
+    if (!ok) {
+      toggle = !toggle;
+      if (toggle) {
+        digitalWrite(LEDClosedPin, LOW);
+        digitalWrite(LEDOpenPin, HIGH);
+      }
+      else {
+        digitalWrite(LEDClosedPin, HIGH);
+        digitalWrite(LEDOpenPin, LOW);
+      }
+    }
     
     info(intervalteller, logit);
 
@@ -255,8 +290,6 @@ void loop(void) {
 }
 
 void info(int intervalteller, bool dolog) {
-  char data[100];
-
   if (dolog) {
     if (intervalteller != 0) {  
       Serial.print(intervalteller);
@@ -284,42 +317,71 @@ void info(int intervalteller, bool dolog) {
     unsigned long TimeNow = millis();
     
     Serial.print(", Tijd nu: ");
-  
-    sprintf(data, "%lu", TimeNow);
-    Serial.print(data);
+    ShowTime(TimeNow, TimeNow);  
   
     Serial.print(", Tijd open: ");
-    DiffTime(TimeLuikOpen, TimeNow);
+    ShowTime(TimeLuikOpen, TimeNow);
   
     Serial.print(", Tijd toe: ");
-    DiffTime(TimeLuikGesloten, TimeNow);
+    ShowTime(TimeLuikGesloten, TimeNow);
   
     Serial.println();
   }
 }
 
-void DiffTime(unsigned long Time, unsigned long TimeNow)
+void ShowTime(unsigned long Time, unsigned long TimeNow)
 {
   char data[100];
 
-  sprintf(data, "%lu", Time);
-  Serial.print(data);
-
-  if (TimeNow >= Time) {
-    unsigned long ms = TimeNow - Time;
-    unsigned long dagen = ms / 1000 / 60 / 60 / 24;
-    ms -= dagen * 24 * 60 * 60 * 1000;
-    unsigned long uren = ms / 1000 / 60 / 60;
-    ms -= uren * 60 * 60 * 1000;
-    unsigned long minuten = ms / 1000 / 60;
-    ms -= minuten * 60 * 1000;
-    unsigned long seconden = ms / 1000;
-    ms -= seconden * 1000;
-    
-    Serial.print(" (");
-    sprintf(data, "%dd%d:%02d:%02d:%03d", (int)dagen, (int)uren, (int)minuten, (int)seconden, (int)ms);
+  if (HMtime == 0)
+  {
+    sprintf(data, "%lu", Time);
     Serial.print(data);
-    Serial.print(")");
+  
+    if (TimeNow > Time) {
+      unsigned long ms = TimeNow - Time;
+      unsigned long dagen = ms / 1000 / 60 / 60 / 24;
+      ms -= dagen * 24 * 60 * 60 * 1000;
+      unsigned long uren = ms / 1000 / 60 / 60;
+      ms -= uren * 60 * 60 * 1000;
+      unsigned long minuten = ms / 1000 / 60;
+      ms -= minuten * 60 * 1000;
+      unsigned long seconden = ms / 1000;
+      ms -= seconden * 1000;
+      
+      Serial.print(" (");
+      sprintf(data, "%dd%d:%02d:%02d:%03d", (int)dagen, (int)uren, (int)minuten, (int)seconden, (int)ms);
+      Serial.print(data);
+      Serial.print(")");
+    }
+  }
+  else
+  {
+    if (Time >= HMtime)
+    {
+      unsigned long ms = Time - HMtime;
+  
+      unsigned long dagen = ms / 1000 / 60 / 60 / 24;
+      ms -= dagen * 24 * 60 * 60 * 1000;
+      unsigned long uren = ms / 1000 / 60 / 60;
+      ms -= uren * 60 * 60 * 1000;
+      unsigned long minuten = ms / 1000 / 60;
+  
+      int h = H + uren;
+      int m = M + minuten;
+      while (m >= 60)
+      {
+        h++;
+        m -= 60;
+      }
+      while (h >= 24)
+        h -= 24;
+  
+      sprintf(data, "%02d:%02d", h, m);
+      Serial.print(data);
+    }
+    else
+      Serial.print("-");
   }
 }
 
@@ -394,6 +456,17 @@ bool Command()
       WachtOpInvoer("Druk enter om verder te gaan");
     }
 
+    else if (OntvangenAntwoord.substring(0, 1) == "C")      // current time
+    {
+      int h = OntvangenAntwoord.substring(1, 3).toInt();
+      int m = OntvangenAntwoord.substring(4, 6).toInt();      
+      if (h != 0 || m != 0) {
+        H = h;
+        M = m;
+        HMtime = millis();
+      }
+    }
+
     else if (OntvangenAntwoord.substring(0, 1) == "I") // info
     {
       info(0, true);
@@ -409,6 +482,7 @@ bool Command()
       Serial.println("R<aantal keer>: Herhaal openen en sluiten luik");
       Serial.println("I: Info");
       Serial.println("L: Log toggle");
+      Serial.println("C<hh:mm>: set current time");
       Serial.println("H: Deze help");
       
       WachtOpInvoer("Druk enter om verder te gaan");
