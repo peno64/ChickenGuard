@@ -430,14 +430,16 @@ bool Command()
     {
       OpenLuik();
 
-      WachtOpInvoer("Druk enter om verder te gaan");
+      if (logit)
+        WachtOpInvoer("Druk enter om verder te gaan");
     }
 
     else if (OntvangenAntwoord.substring(0, 1) == "S") // sluit
     {
       SluitLuik();
 
-      WachtOpInvoer("Druk enter om verder te gaan");
+      if (logit)
+        WachtOpInvoer("Druk enter om verder te gaan");
     }
 
     else if (OntvangenAntwoord.substring(0, 1) == "R") // repeat
@@ -453,7 +455,8 @@ bool Command()
 
         delay(5000);
       }
-      WachtOpInvoer("Druk enter om verder te gaan");
+      if (logit)
+        WachtOpInvoer("Druk enter om verder te gaan");
     }
 
     else if (OntvangenAntwoord.substring(0, 1) == "C")      // current time
@@ -470,8 +473,27 @@ bool Command()
     else if (OntvangenAntwoord.substring(0, 1) == "I") // info
     {
       info(0, true);
-      
-      WachtOpInvoer("Druk enter om verder te gaan");
+
+      if (logit)
+        WachtOpInvoer("Druk enter om verder te gaan");
+    }
+
+    else if (OntvangenAntwoord.substring(0, 1) == "0") 
+    {
+      digitalWrite(LEDOpenPin, LOW);
+      digitalWrite(LEDClosedPin, LOW);
+    }
+
+    else if (OntvangenAntwoord.substring(0, 1) == "1") 
+    {
+      digitalWrite(LEDOpenPin, HIGH);
+      digitalWrite(LEDClosedPin, LOW);
+    }
+
+    else if (OntvangenAntwoord.substring(0, 1) == "2")
+    {
+      digitalWrite(LEDOpenPin, LOW);
+      digitalWrite(LEDClosedPin, HIGH);
     }
 
     else if (OntvangenAntwoord.substring(0, 1) == "H") // help
@@ -484,8 +506,9 @@ bool Command()
       Serial.println("L: Log toggle");
       Serial.println("C<hh:mm>: set current time");
       Serial.println("H: Deze help");
-      
-      WachtOpInvoer("Druk enter om verder te gaan");
+
+      if (logit)
+        WachtOpInvoer("Druk enter om verder te gaan");
     }
 
     return true;
