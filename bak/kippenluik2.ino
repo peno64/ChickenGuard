@@ -1,16 +1,22 @@
 /*
   Kippenluik
+
   Zorg ervoor dat het luik *niet* gesloten is de eerste keer en het systeem stelt zich automatisch goed in.
   De as zal beginnen draaien in de ene of andere richting en uiteindelijk de draad oprollen zodat het luik sluit.
   Bij openen draait de as de andere richting uit en dus de draad weer afrollen en dus het luik openen.
+
   Bij starten wacht de arduino 1 minuut met normale werking om commando's in te kunnen geven.
+
   Ook eens de normale werking is gestart kunnen nog commando's gegeven worden.
   Merk op dat het default verbose is. Geef het L commando om info te tonen en terug L om weer verbose te gaan.
   Het H commando geeft een help scherm met alle mogelijke commando's.
+
   Merk op dat by default de arduino telkens reset als de monitor wordt gestart (Ctrl Shift M)
   Dan ben je ook alle variabelen kwijt :-(
+
   Dit kan opgelost worden door een condensator te plaatsen tussen de reset pin en gnd. Ik heb 0.47 µF genomen en dat werkt prima.
   Merk op dat die wel moet losgekoppeld zijn als er een nieuwe sketch moet geupload worden. Anders krijg je een fout dat het uploaden niet gelukt is.
+
 */
 
 const int LuikGoedemorgen = 600;  // lichtwaarde wanneer luik open
@@ -20,7 +26,7 @@ const int LuikMetingen = 5;       // het gemiddelde van aantal metingen waarop b
 const int intervalwaarde = 60;    // aantal seconden pause tussen metingen
 const int motortin1Pin = 4;       // controller in1  D4
 const int motortin2Pin = 5;       // controller in2  D5
-const int LEDClosedPin = 9;       // green LED - door closed  D9
+const int LEDClosedPin = 6;       // green LED - door closed  D6
 const int LEDOpenPin = 7;         // red LED - door open D7
 const int magneetPin = A1;        // magneetswitch   A1
 const int ldrPin = A2;            // LDR             A2
@@ -30,7 +36,7 @@ bool ok = true;                   // alles ok
 bool toggle = false;
 bool logit = false;
 
-int LuikOpenMS = 1100;            // aantal milliseconden om Luik open te laten gaan
+int LuikOpenMS = 1000;            // aantal milliseconden om Luik open te laten gaan
 int LuikSluitMS = 3000;           // maximaal aantal milliseconden om Luik te sluiten
 
 // variabelen
@@ -61,7 +67,6 @@ void setup(void) {
     pinMode(LED_BUILTIN, OUTPUT);
     digitalWrite(LED_BUILTIN, LOW);
     pinMode(LEDOpenPin, OUTPUT);
-    pinMode(LEDClosedPin, OUTPUT);
     digitalWrite(LEDOpenPin, LOW);
     digitalWrite(LEDClosedPin, LOW);
 
@@ -148,11 +153,11 @@ void SluitLuik(void) {
 
     MotorUit();
 
-    delay(500); // wacht een halve seconde
+    delay(1000); // wacht een halve seconde
 
     MotorSluitLuik(); // sluit nog eens goed het luik. Dit kan omdat een elastiek wordt gebruikt en die dus ook nog een beetje kan rekken
 
-    delay(30); // voor maar 50 ms zodat deurtje goed aangespannen is
+    delay(50); // voor maar 50 ms zodat deurtje goed aangespannen is
 
     MotorUit();
 
@@ -183,8 +188,14 @@ void OpenLuik(void) {
   /*************************/
   Serial.println("Openen luik");
   if (IsLuikGesloten()) {
+    MotorSluitLuik();
+    delay(70);
     MotorOpenLuik();
-    delay(LuikOpenMS); // Er is geen detectie op luik volledig open daarom wordt de motor vast LuikOpenMS milliseconden aangezet en dan zou het luik open moeten zijn
+    delay(300); // Er is geen detectie op luik volledig open daarom wordt de motor vast LuikOpenMS milliseconden aangezet en dan zou het luik open moeten zijn
+    MotorUit();
+    delay(1000);
+    MotorOpenLuik();
+    delay(LuikOpenMS - 300); // Er is geen detectie op luik volledig open daarom wordt de motor vast LuikOpenMS milliseconden aangezet en dan zou het luik open moeten zijn
   }
   
   MotorUit();
@@ -244,7 +255,13 @@ void ProcesLuikOpenSluit(bool openen)
   gemiddelde = gemiddelde / LuikMetingen;
 
   if (!ok)
-    Serial.println("Iets is niet ok; idle");
+  {
+    if ((gemiddelde <= LuikWelterusten && IsLuikGesloten()) ||
+        (openen && gemiddelde >= LuikGoedemorgen && !IsLuikGesloten()))
+      ok = true;
+    else 
+      Serial.println("Iets is niet ok; idle");
+  }
     
   // beslissen of luik open, dicht of blijven moet
   else if (gemiddelde <= LuikWelterusten)
@@ -491,12 +508,6 @@ bool Command()
       digitalWrite(LEDClosedPin, HIGH);
     }
 
-   else if (OntvangenAntwoord.substring(0, 1) == "3")
-    {
-      digitalWrite(LEDOpenPin, HIGH);
-      digitalWrite(LEDClosedPin, HIGH);
-    }
-    
     else if (OntvangenAntwoord.substring(0, 1) == "H") // help
     {
       Serial.println("T<ms>: milliseconden openen luik");
