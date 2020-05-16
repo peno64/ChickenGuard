@@ -30,7 +30,7 @@ bool ok = true;                   // alles ok
 bool toggle = false;
 bool logit = false;
 
-int LuikOpenMS = 1100;            // aantal milliseconden om Luik open te laten gaan
+int LuikOpenMS = 1300;            // aantal milliseconden om Luik open te laten gaan
 int LuikSluitMS = 3000;           // maximaal aantal milliseconden om Luik te sluiten
 
 // variabelen
