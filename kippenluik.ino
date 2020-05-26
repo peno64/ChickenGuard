@@ -26,7 +26,7 @@ const int magneetPin = A1;        // magneetswitch   A1
 const int ldrPin = A2;            // LDR             A2
 
 bool started = false;
-bool ok = true;                   // alles ok
+int ok = 0;                       // alles ok
 bool toggle = false;
 bool logit = false;
 
@@ -65,7 +65,7 @@ void setup(void) {
     digitalWrite(LEDOpenPin, LOW);
     digitalWrite(LEDClosedPin, LOW);
 
-    SetLed();
+    SetOkLed();
 
     logit = true;
     
@@ -86,13 +86,14 @@ void setup(void) {
   
     SluitLuik(); // Door de magneetschakelaar weten hierna zeker dat het luik gesloten is
   
+    LichtMeting(true);
     ProcesLuik(true); // opent het luik indien het licht is en laat het gesloten indien het donker is
   }
 }
 
-void SetLed(void)
+void SetOkLed(void)
 {
-  if (ok)
+  if (ok == 0)
     digitalWrite(LED_BUILTIN, LOW);
   else
     digitalWrite(LED_BUILTIN, HIGH);  
@@ -152,24 +153,25 @@ void SluitLuik(void) {
 
     MotorSluitLuik(); // sluit nog eens goed het luik. Dit kan omdat een elastiek wordt gebruikt en die dus ook nog een beetje kan rekken
 
-    delay(30); // voor maar 50 ms zodat deurtje goed aangespannen is
+    delay(30); // voor maar 30 ms zodat deurtje goed aangespannen is
 
     MotorUit();
 
     // controle luik gesloten
-    ok = false;
-    for (int i = 0; i < 10 && !ok; i++) {
+    ok = 1;
+    for (int i = 0; i < 10 && ok != 0; i++) {
       delay(100);
-      ok = IsLuikGesloten();
-      if (!ok)
+      if (IsLuikGesloten())
+        ok = 0;
+      else
         Serial.println("Luik niet gesloten, nog eens controleren");
     }
-    SetLed();
+    SetOkLed();
 
     digitalWrite(LEDOpenPin, LOW);
     digitalWrite(LEDClosedPin, LOW);
     
-    if (ok) {
+    if (ok == 0) {
       Serial.println("Luik gesloten");
       digitalWrite(LEDClosedPin, HIGH);  
     }
@@ -190,20 +192,21 @@ void OpenLuik(void) {
   MotorUit();
 
   // controle luik open
-  ok = false;
-  for (int i = 0; i < 10 && !ok; i++) {
+  ok = 2;
+  for (int i = 0; i < 10 && ok != 0; i++) {
     delay(100);
-    ok = !IsLuikGesloten();
-    if (!ok)
+    if (!IsLuikGesloten())
+      ok = 0;
+    else
       Serial.println("Luik niet open, nog eens controleren");
   }
 
-  SetLed();
+  SetOkLed();
 
   digitalWrite(LEDOpenPin, LOW);
   digitalWrite(LEDClosedPin, LOW);
   
-  if (ok) {
+  if (ok == 0) {
     digitalWrite(LEDOpenPin, HIGH);
     Serial.println("Luik open");
   }
@@ -212,7 +215,7 @@ void OpenLuik(void) {
 }
 
 /*************************/
-void ProcesLuik(bool init) {
+void LichtMeting(bool init) {
   /*************************/
 
   int teller;
@@ -228,43 +231,79 @@ void ProcesLuik(bool init) {
     intMeetMoment++;                           // verhoog positie in de array
     if (intMeetMoment >= LuikMetingen) intMeetMoment = 0; // als array gevuld is dan weer vooraf beginnen met vullen
   }
-
-  ProcesLuikOpenSluit(true);
 }
 
-void ProcesLuikOpenSluit(bool openen)
+int ProcesLuik(bool openen)
 {
-  uint16_t gemiddelde;
+  // gemiddelde van de array berekenen, minimale en maximale waarde bepalen en bepalen als het donkerder of lichter wordt
+  uint16_t gemiddelde = 0;
+  uint16_t minimum = LuikWelterusten + 1;
+  uint16_t maximum = 0;  
+  int intMeetMoment1 = intMeetMoment == 0 ? LuikMetingen - 1 : intMeetMoment - 1;
+  uint16_t licht0 = Licht[intMeetMoment1]; // laatste lichtmeting
+  uint16_t donkerder = 0, lichter = 0;
   
-  // gemiddelde van de array berekenen
-  gemiddelde = 0;
-  for (int teller = 0; teller < LuikMetingen; teller++)
+  for (int teller = LuikMetingen - 1; teller >= 0; teller--) {
     gemiddelde += Licht[teller];
+    if (Licht[teller] > maximum)
+      maximum = Licht[teller];
+    if (Licht[teller] < minimum)
+      minimum = Licht[teller];
+    intMeetMoment1 = intMeetMoment1 == 0 ? LuikMetingen - 1 : intMeetMoment1 - 1;
+    if (teller > 0)
+    {
+      if (licht0 < Licht[intMeetMoment1]) // als de lichtmeting ervoor minder is dan is het donkerder geworden
+        donkerder++; // aantal keren donkerder 
+      else if (licht0 > Licht[intMeetMoment1]) // als de lichtmeting ervoor meer is dan is het lichter geworden
+        lichter++; // aantal keren lichter
+      licht0 = Licht[intMeetMoment1];
+    }    
+  }
   
   gemiddelde = gemiddelde / LuikMetingen;
 
-  if (!ok)
-    Serial.println("Iets is niet ok; idle");
+  int LED = 0;
+
+  if (ok != 0)
+  {
+    char data[100];
+
+    sprintf(data, "Iets is niet ok (%d); idle", ok);
+    Serial.println(data);
+  }
     
   // beslissen of luik open, dicht of blijven moet
   else if (gemiddelde <= LuikWelterusten)
     SluitLuik();
 
-  else if (openen && gemiddelde >= LuikGoedemorgen)
-    OpenLuik();
+  else if (gemiddelde >= LuikGoedemorgen) {
+    if (openen)
+      OpenLuik();
+  }
+
+  else if (donkerder > lichter && minimum <= LuikWelterusten) // Het wordt donkerder en de minimum lichtmeting ligt onder de waarde om te sluiten => bijna tijd om te sluiten
+    LED = LEDClosedPin;
+
+  else if (lichter > donkerder && maximum >= LuikGoedemorgen) // Het wordt lichter en de maximum lichtmeting ligt boven de waarde om te openen => bijna tijd om te openen
+    LED = LEDOpenPin;
+
+  return LED;
 }
 
-/*************************/
+/*.************************/
 void loop(void) {
   /*************************/
+
+  static int LED = 0;
 
   //taakafhandeling. Moet elke minuut
   for (int intervalteller = intervalwaarde; intervalteller > 0; intervalteller--) {
     delay(1000);    
 
-    ProcesLuikOpenSluit(false); // 's nachts elke seconde controleren als luik nog steeds toe is. Indien niet dan laten sluiten
+    int LED0 = LED;
+    LED = ProcesLuik(false); // 's nachts elke seconde controleren als luik nog steeds toe is. Indien niet dan laten sluiten
 
-    if (!ok) {
+    if (ok != 0) {
       toggle = !toggle;
       if (toggle) {
         digitalWrite(LEDClosedPin, LOW);
@@ -275,13 +314,33 @@ void loop(void) {
         digitalWrite(LEDOpenPin, LOW);
       }
     }
+
+    else if (LED == LEDClosedPin || LED == LEDOpenPin) {
+      toggle = !toggle;
+
+      digitalWrite(LED, toggle ? HIGH : LOW);
+      digitalWrite(LED == LEDClosedPin ? LEDOpenPin : LEDClosedPin, LOW);
+    }
+
+    else if (LED0 != 0)
+    {
+      if (IsLuikGesloten()) {
+        digitalWrite(LEDOpenPin, LOW);
+        digitalWrite(LEDClosedPin, HIGH);
+      }
+      else {
+        digitalWrite(LEDClosedPin, LOW);
+        digitalWrite(LEDOpenPin, HIGH);
+      }
+    }
     
     info(intervalteller, logit);
 
     Command();
   }
 
-  ProcesLuik(false);
+  LichtMeting(false);
+  ProcesLuik(true);
 }
 
 void info(int intervalteller, bool dolog) {
@@ -491,7 +550,7 @@ bool Command()
       digitalWrite(LEDClosedPin, HIGH);
     }
 
-   else if (OntvangenAntwoord.substring(0, 1) == "3")
+    else if (OntvangenAntwoord.substring(0, 1) == "3")
     {
       digitalWrite(LEDOpenPin, HIGH);
       digitalWrite(LEDClosedPin, HIGH);
@@ -503,6 +562,10 @@ bool Command()
       Serial.println("O: Open luik");
       Serial.println("S: Sluit luik");
       Serial.println("R<aantal keer>: Herhaal openen en sluiten luik");
+      Serial.println("0: Led uit");
+      Serial.println("1: Led open aan");
+      Serial.println("2: Led sluiten aan");
+      Serial.println("3: Led open en sluiten aan");
       Serial.println("I: Info");
       Serial.println("L: Log toggle");
       Serial.println("C<hh:mm>: set current time");
