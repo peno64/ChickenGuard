@@ -17,37 +17,37 @@
 
 #define ClockModule
 
-const int LuikGoedemorgen = 600;  // lichtwaarde wanneer luik open
-const int LuikWelterusten = 35;   // lichtwaarde wanneer luik dicht
+const int LuikGoedemorgen = 600; // lichtwaarde wanneer luik open
+const int LuikWelterusten = 35;  // lichtwaarde wanneer luik dicht
 
-const int LuikMetingen = 5;       // het gemiddelde van aantal metingen waarop beslist wordt
-const int intervalwaarde = 60;    // aantal seconden pause tussen metingen
-const int motortin1Pin = 4;       // controller in1  D4
-const int motortin2Pin = 5;       // controller in2  D5
-const int LEDClosedPin = 9;       // green LED - door closed  D9
-const int LEDOpenPin = 7;         // red LED - door open D7
-const int magneetPin = A1;        // magneetswitch   A1
-const int ldrPin = A2;            // LDR             A2
+const int LuikMetingen = 5;    // het gemiddelde van aantal metingen waarop beslist wordt
+const int intervalwaarde = 60; // aantal seconden pause tussen metingen
+const int motortin1Pin = 4;    // controller in1  D4
+const int motortin2Pin = 5;    // controller in2  D5
+const int LEDClosedPin = 9;    // green LED - door closed  D9
+const int LEDOpenPin = 7;      // red LED - door open D7
+const int magneetPin = A1;     // magneetswitch   A1
+const int ldrPin = A2;         // LDR             A2
 
-const int LuikOpenMS = 1300;      // aantal milliseconden om Luik open te laten gaan
-const int LuikSluitMS = 3000;     // maximaal aantal milliseconden om Luik te sluiten
+const int LuikOpenMS = 1300;  // aantal milliseconden om Luik open te laten gaan
+const int LuikSluitMS = 3000; // maximaal aantal milliseconden om Luik te sluiten
 
-int status = 0;                   // alles ok
+int status = 0; // alles ok
 int toggle = 0;
 bool logit = false;
 
-int intMeetMoment = 0;            // positie in array met lichtmetingen
-uint16_t Licht[LuikMetingen];     // array met de lichtmetingen
+int intMeetMoment = 0;        // positie in array met lichtmetingen
+uint16_t Licht[LuikMetingen]; // array met de lichtmetingen
 
 unsigned long TimeLuikOpen = 0;
 unsigned long TimeLuikGesloten = 0;
 
+const byte StartHourLuikOpen = 7;    // minimum startuur dat luik open mag
+const byte StartMinuteLuikOpen = 30; // minimum startmin dat luik open mag
+
 bool HasClockModule = false;
 
 #if defined ClockModule
-const byte StartHourLuikOpen = 7;     // minimum startuur dat luik open mag
-const byte StartMinuteLuikOpen = 30;  // minimum startmin dat luik open mag
-
 byte HourLuikOpen = 0;
 byte MinuteLuikOpen = 0;
 
@@ -59,10 +59,8 @@ int H = 0;
 int M = 0;
 unsigned long HMtime = 0;
 
-/*************************/
-void setup(void) {
-  /*************************/
-
+void setup(void)
+{
   Serial.begin(9600);
   Serial.println("Kippenluik. original Copyright Techniek & Dier aangepast door peno");
 
@@ -78,8 +76,8 @@ void setup(void) {
 
   pinMode(motortin1Pin, OUTPUT);
   pinMode(motortin2Pin, OUTPUT);
-  pinMode(ldrPin, INPUT);           //ldr+plus en ldr+port+10k
-  pinMode(magneetPin, INPUT_PULLUP);       //tussen 0 en de pin
+  pinMode(ldrPin, INPUT);            //ldr+plus en ldr+port+10k
+  pinMode(magneetPin, INPUT_PULLUP); //tussen 0 en de pin
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
   pinMode(LEDOpenPin, OUTPUT);
@@ -122,7 +120,8 @@ void SetStatusLed(bool on)
     digitalWrite(LED_BUILTIN, LOW);
 }
 
-bool IsLuikGesloten() {
+bool IsLuikGesloten()
+{
   return digitalRead(magneetPin) == 0;
 }
 
@@ -156,18 +155,18 @@ void MotorSluitLuik(void)
 #endif
 }
 
-/*************************/
-void SluitLuik(void) {
-  /*************************/
-
+void SluitLuik(void)
+{
   Serial.println("Sluiten luik");
 
-  if (!IsLuikGesloten()) {
+  if (!IsLuikGesloten())
+  {
     MotorSluitLuik();
 
     int ElapsedTime = 0;
     unsigned long StartTime = millis();
-    while (!IsLuikGesloten() && ElapsedTime < LuikSluitMS) { // sluiten totdat magneetschakelaar zegt dat deur gesloten is maar ook max LuikSluitMS milliseconden (veiligheid)
+    while (!IsLuikGesloten() && ElapsedTime < LuikSluitMS)
+    { // sluiten totdat magneetschakelaar zegt dat deur gesloten is maar ook max LuikSluitMS milliseconden (veiligheid)
       unsigned long CurrentTime = millis();
       if (CurrentTime < StartTime) // overflow veiligheid
         StartTime = CurrentTime;
@@ -178,14 +177,16 @@ void SluitLuik(void) {
 
     if (ElapsedTime >= LuikSluitMS)
       status = 2;
-    else {
+    else
+    {
       status = 3;
 
       delay(500); // wacht een halve seconde
 
       // sluit nog eens goed het luik. Dit kan omdat een elastiek wordt gebruikt en die dus ook nog een beetje kan rekken
       // soms moet die nog eens geprobeerd worden omdat de motor terugdraait. Max 10x
-      for (int i = 0; i < 10 && status != 0; i++) {
+      for (int i = 0; i < 10 && status != 0; i++)
+      {
         MotorSluitLuik(); // sluit nog eens goed het luik. Dit kan omdat een elastiek wordt gebruikt en die dus ook nog een beetje kan rekken
 
         delay(30); // voor maar 30 ms zodat deurtje goed aangespannen is
@@ -205,7 +206,8 @@ void SluitLuik(void) {
     digitalWrite(LEDOpenPin, LOW);
     digitalWrite(LEDClosedPin, LOW);
 
-    if (status == 0) {
+    if (status == 0)
+    {
       Serial.println("Luik gesloten");
       digitalWrite(LEDClosedPin, HIGH);
     }
@@ -214,11 +216,11 @@ void SluitLuik(void) {
   }
 }
 
-/*************************/
-void OpenLuik(void) {
-  /*************************/
+void OpenLuik(void)
+{
   Serial.println("Openen luik");
-  if (IsLuikGesloten()) {
+  if (IsLuikGesloten())
+  {
     MotorOpenLuik();
     delay(LuikOpenMS); // Er is geen detectie op luik volledig open daarom wordt de motor vast LuikOpenMS milliseconden aangezet en dan zou het luik open moeten zijn
   }
@@ -227,7 +229,8 @@ void OpenLuik(void) {
 
   // controle luik open
   status = 1;
-  for (int i = 0; i < 10 && status != 0; i++) {
+  for (int i = 0; i < 10 && status != 0; i++)
+  {
     delay(100);
     if (!IsLuikGesloten())
       status = 0;
@@ -238,7 +241,8 @@ void OpenLuik(void) {
   digitalWrite(LEDOpenPin, LOW);
   digitalWrite(LEDClosedPin, LOW);
 
-  if (status == 0) {
+  if (status == 0)
+  {
     digitalWrite(LEDOpenPin, HIGH);
     Serial.println("Luik open");
   }
@@ -246,10 +250,8 @@ void OpenLuik(void) {
     Serial.println("Oops, luik *niet* open");
 }
 
-/*************************/
-void LichtMeting(bool init) {
-  /*************************/
-
+void LichtMeting(bool init)
+{
   int teller;
 
   // doe een lichtmeting
@@ -257,11 +259,13 @@ void LichtMeting(bool init) {
     teller = LuikMetingen;
   else
     teller = 1;
-  for (; teller >= 1; teller--) {
+  for (; teller >= 1; teller--)
+  {
     //haal lichtmeting op
     Licht[intMeetMoment] = analogRead(ldrPin); // gemeten waarde in de array zetten
     intMeetMoment++;                           // verhoog positie in de array
-    if (intMeetMoment >= LuikMetingen) intMeetMoment = 0; // als array gevuld is dan weer vooraf beginnen met vullen
+    if (intMeetMoment >= LuikMetingen)
+      intMeetMoment = 0; // als array gevuld is dan weer vooraf beginnen met vullen
   }
 }
 
@@ -276,7 +280,8 @@ void LichtBerekening(uint16_t &gemiddelde, uint16_t &minimum, uint16_t &maximum,
   donkerder = 0;
   lichter = 0;
 
-  for (int teller = LuikMetingen - 1; teller >= 0; teller--) {
+  for (int teller = LuikMetingen - 1; teller >= 0; teller--)
+  {
     gemiddelde += Licht[teller];
     if (Licht[teller] > maximum)
       maximum = Licht[teller];
@@ -285,10 +290,10 @@ void LichtBerekening(uint16_t &gemiddelde, uint16_t &minimum, uint16_t &maximum,
     intMeetMoment1 = intMeetMoment1 == 0 ? LuikMetingen - 1 : intMeetMoment1 - 1;
     if (teller > 0)
     {
-      if (licht0 < Licht[intMeetMoment1]) // als de lichtmeting ervoor minder is dan is het donkerder geworden
-        donkerder++; // aantal keren donkerder
+      if (licht0 < Licht[intMeetMoment1])      // als de lichtmeting ervoor minder is dan is het donkerder geworden
+        donkerder++;                           // aantal keren donkerder
       else if (licht0 > Licht[intMeetMoment1]) // als de lichtmeting ervoor meer is dan is het lichter geworden
-        lichter++; // aantal keren lichter
+        lichter++;                             // aantal keren lichter
       licht0 = Licht[intMeetMoment1];
     }
   }
@@ -316,16 +321,20 @@ int ProcesLuik(bool openen)
   else if (gemiddelde <= LuikWelterusten)
     SluitLuik();
 
-  else if (gemiddelde >= LuikGoedemorgen) {
-    if (openen && IsLuikGesloten()) {
+  else if (gemiddelde >= LuikGoedemorgen)
+  {
+    if (openen && IsLuikGesloten())
+    {
       byte minute = 0, hour = 24;
-      if (HasClockModule) {
+      if (HasClockModule)
+      {
 #if defined ClockModule
         // retrieve data from DS3231
         readDS3231time(NULL, &minute, &hour, NULL, NULL, NULL, NULL);
 #endif
       }
-      else if (HMtime != 0) {
+      else if (HMtime != 0)
+      {
         unsigned long TimeNow = millis();
 
         GetTime(TimeNow, TimeNow, &hour, &minute);
@@ -344,20 +353,20 @@ int ProcesLuik(bool openen)
   return LED;
 }
 
-/*.************************/
-void loop(void) {
-  /*************************/
-
+void loop(void)
+{
   static int LED = 0;
 
   //taakafhandeling. Moet elke minuut
-  for (int intervalteller = intervalwaarde; intervalteller > 0; intervalteller--) {
+  for (int intervalteller = intervalwaarde; intervalteller > 0; intervalteller--)
+  {
     delay(1000);
 
     int LED0 = LED;
     LED = ProcesLuik(false); // 's nachts elke seconde controleren als luik nog steeds toe is. Indien niet dan laten sluiten
 
-    if (status != 0) {
+    if (status != 0)
+    {
       // knipper rood zoveel keer als de foutcode
       if (++toggle > status * 2)
         toggle = 0;
@@ -366,7 +375,8 @@ void loop(void) {
       digitalWrite(LEDOpenPin, toggle % 2 == 0 ? LOW : HIGH);
     }
 
-    else if (LED == LEDClosedPin || LED == LEDOpenPin) {
+    else if (LED == LEDClosedPin || LED == LEDOpenPin)
+    {
       if (++toggle > 1)
         toggle = 0;
 
@@ -376,11 +386,13 @@ void loop(void) {
 
     else if (LED0 != 0)
     {
-      if (IsLuikGesloten()) {
+      if (IsLuikGesloten())
+      {
         digitalWrite(LEDOpenPin, LOW);
         digitalWrite(LEDClosedPin, HIGH);
       }
-      else {
+      else
+      {
         digitalWrite(LEDClosedPin, LOW);
         digitalWrite(LEDOpenPin, HIGH);
       }
@@ -395,9 +407,12 @@ void loop(void) {
   ProcesLuik(true);
 }
 
-void info(int intervalteller, bool dolog) {
-  if (dolog) {
-    if (intervalteller != 0) {
+void info(int intervalteller, bool dolog)
+{
+  if (dolog)
+  {
+    if (intervalteller != 0)
+    {
       Serial.print(intervalteller);
       Serial.print(": ");
     }
@@ -426,7 +441,8 @@ void info(int intervalteller, bool dolog) {
     Serial.print(", Status: ");
     Serial.print(status);
 
-    if (HasClockModule) {
+    if (HasClockModule)
+    {
 #if defined ClockModule
       byte second, minute, hour;
       // retrieve data from DS3231
@@ -442,7 +458,8 @@ void info(int intervalteller, bool dolog) {
       ShowTime(&HourLuikGesloten, &MinuteLuikGesloten, NULL);
 #endif
     }
-    else {
+    else
+    {
       unsigned long TimeNow = millis();
 
       Serial.print(", Tijd nu: ");
@@ -464,13 +481,16 @@ void ShowTime(byte *hour, byte *minute, byte *second)
 {
   Serial.print(*hour, DEC);
   Serial.print(":");
-  if (*minute < 10) {
+  if (*minute < 10)
+  {
     Serial.print("0");
   }
   Serial.print(*minute, DEC);
-  if (second != NULL) {
+  if (second != NULL)
+  {
     Serial.print(":");
-    if (*second < 10) {
+    if (*second < 10)
+    {
       Serial.print("0");
     }
     Serial.print(*second, DEC);
@@ -516,7 +536,8 @@ void ShowTime(unsigned long Time, unsigned long TimeNow)
     sprintf(data, "%lu", Time);
     Serial.print(data);
 
-    if (TimeNow > Time) {
+    if (TimeNow > Time)
+    {
       unsigned long ms = TimeNow - Time;
       unsigned long dagen = ms / 1000 / 60 / 60 / 24;
       ms -= dagen * 24 * 60 * 60 * 1000;
@@ -549,10 +570,12 @@ void ShowTime(unsigned long Time, unsigned long TimeNow)
   }
 }
 
-String WachtOpInvoer(String Vraag) {
+String WachtOpInvoer(String Vraag)
+{
   Serial.println(Vraag);
 
-  while (!Serial.available()) {
+  while (!Serial.available())
+  {
     // wacht op input
   }
 
@@ -598,7 +621,8 @@ bool Command()
     {
       int x = OntvangenAntwoord.substring(1).toInt();
 
-      for (int i = 0; i < x; i++) {
+      for (int i = 0; i < x; i++)
+      {
         SluitLuik();
 
         delay(5000);
@@ -611,11 +635,12 @@ bool Command()
         WachtOpInvoer("Druk enter om verder te gaan");
     }
 
-    else if (OntvangenAntwoord.substring(0, 1) == "C")      // current time: hh:mm
+    else if (OntvangenAntwoord.substring(0, 1) == "C") // current time: hh:mm
     {
       int h = OntvangenAntwoord.substring(1, 3).toInt();
       int m = OntvangenAntwoord.substring(4, 6).toInt();
-      if (h != 0 || m != 0) {
+      if (h != 0 || m != 0)
+      {
         H = h;
         M = m;
         HMtime = millis();
@@ -623,7 +648,7 @@ bool Command()
     }
 
 #if defined ClockModule
-    else if (OntvangenAntwoord.substring(0, 1) == "D")      // current date/time: dd/mm/yy hh:mm:ss
+    else if (OntvangenAntwoord.substring(0, 1) == "D") // current date/time: dd/mm/yy hh:mm:ss
     {
       int dag = OntvangenAntwoord.substring(1, 3).toInt();
       int maand = OntvangenAntwoord.substring(4, 6).toInt();
@@ -638,7 +663,7 @@ bool Command()
 #endif
 
 #if defined ClockModule
-    if (OntvangenAntwoord.substring(0, 1) == "T")      // temperatuur
+    if (OntvangenAntwoord.substring(0, 1) == "T") // temperatuur
     {
       Serial.print("Temperatuur: ");
       Serial.print(readTemperature());
@@ -717,42 +742,46 @@ bool Command()
 
 #define DS3231_I2C_ADDRESS 0x68 // Convert normal decimal numbers to binary coded decimal
 
-byte decToBcd(byte val) {
-  return ( (val / 10 * 16) + (val % 10) );
+byte decToBcd(byte val)
+{
+  return ((val / 10 * 16) + (val % 10));
 }
 
-byte bcdToDec(byte val) { // Convert binary coded decimal to normal decimal numbers
-  return ( (val / 16 * 10) + (val % 16) );
+byte bcdToDec(byte val)
+{ // Convert binary coded decimal to normal decimal numbers
+  return ((val / 16 * 10) + (val % 16));
 }
 
-bool InitClock() {
+bool InitClock()
+{
   Wire.begin();
   byte sec, minute, hour;
   readDS3231time(&sec, &minute, &hour, NULL, NULL, NULL, NULL);
   return sec < 60 && minute < 60 && hour < 24;
 }
 
-void setDS3231time(byte second, byte minute, byte hour, byte dayOfWeek, byte dayOfMonth, byte month, byte year) {
+void setDS3231time(byte second, byte minute, byte hour, byte dayOfWeek, byte dayOfMonth, byte month, byte year)
+{
   if (dayOfWeek == 0)
     dayOfWeek = dayofweek(dayOfMonth, month, 2000 + year) + 1;
   // sets time and date data to DS3231
   Wire.beginTransmission(DS3231_I2C_ADDRESS);
-  Wire.write(0); // set next input to start at the seconds register
-  Wire.write(decToBcd(second)); // set seconds
-  Wire.write(decToBcd(minute)); // set minutes
-  Wire.write(decToBcd(hour)); // set hours
-  Wire.write(decToBcd(dayOfWeek)); // set day of week (1=Sunday, 7=Saturday)
+  Wire.write(0);                    // set next input to start at the seconds register
+  Wire.write(decToBcd(second));     // set seconds
+  Wire.write(decToBcd(minute));     // set minutes
+  Wire.write(decToBcd(hour));       // set hours
+  Wire.write(decToBcd(dayOfWeek));  // set day of week (1=Sunday, 7=Saturday)
   Wire.write(decToBcd(dayOfMonth)); // set date (1 to 31)
-  Wire.write(decToBcd(month)); // set month
-  Wire.write(decToBcd(year)); // set year (0 to 99)
+  Wire.write(decToBcd(month));      // set month
+  Wire.write(decToBcd(year));       // set year (0 to 99)
   Wire.endTransmission();
 }
 
 int dayofweek(int d, int m, int y)
 {
-  static int t[] = { 0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4 };
+  static int t[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
   y -= m < 3;
-  return ( y + y / 4 - y / 100 + y / 400 + t[m - 1] + d) % 7;
+  return (y + y / 4 - y / 100 + y / 400 + t[m - 1] + d) % 7;
 }
 
 void readDS3231time(byte *second,
@@ -761,7 +790,8 @@ void readDS3231time(byte *second,
                     byte *dayOfWeek,
                     byte *dayOfMonth,
                     byte *month,
-                    byte *year) {
+                    byte *year)
+{
   Wire.beginTransmission(DS3231_I2C_ADDRESS);
   Wire.write(0); // set DS3231 register pointer to 00h
   Wire.endTransmission();
@@ -791,15 +821,16 @@ void readDS3231time(byte *second,
     *year = b;
 }
 
-float readTemperature() {
+float readTemperature()
+{
   Wire.beginTransmission(DS3231_I2C_ADDRESS);
-  Wire.write(0x11);  // register address for the temperature
+  Wire.write(0x11); // register address for the temperature
   Wire.endTransmission();
-  Wire.requestFrom(DS3231_I2C_ADDRESS, 2);  // get 2 bytes
-  int MSB = Wire.read();  // 2's complement int portion
-  int LSB = Wire.read();  // fraction portion
-  float temperature = MSB & 0x7F;  // do 2's moth on MSB
-  temperature = temperature + (LSB >> 6) * 0.25;  // only care about bits 7 and 8
+  Wire.requestFrom(DS3231_I2C_ADDRESS, 2);       // get 2 bytes
+  int MSB = Wire.read();                         // 2's complement int portion
+  int LSB = Wire.read();                         // fraction portion
+  float temperature = MSB & 0x7F;                // do 2's moth on MSB
+  temperature = temperature + (LSB >> 6) * 0.25; // only care about bits 7 and 8
 
   return temperature;
 }
