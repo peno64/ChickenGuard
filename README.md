@@ -18,6 +18,10 @@ However it can also happen that the motor cannot hold the elastic and it returns
 Also here is a 2 colored led at the outside which will show the status.
 If the door is open then the red led is on. If the door is closed then it is the green led that is on. green for safe, they are locked, red for possible unsafe.
 a couple minutes before opening and closing the corresponding leds start to blink to show that the door is about to open/close.
+If something goes wrong (magnetic switch stays on when the door must open or does not go on when the door is closed) then the system goes into error mode and
+will stop working. This to protect the mechanism. The red led will blink a number of times depending on the status code.
+If it blinks once then this means that the door is not opened. If it blinks twice then the door was not closed after a given number of seconds and if it blinks
+three times then the door is not closed after trying 10 times to close it well.
 Also there is the possibility of a clock module (DS3231). It is optional. If it is there then it can be used to set to minimum time the door may open.
 Otherwise in the summer it already opens at 5h which is very early and predators could still give a visit that early. I use it to specify that the door may not
 open before 7h30 in the morning. Even if that clock module is not there it is possible to do this also with the timer from the arduino but this timer is not
