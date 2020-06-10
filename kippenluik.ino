@@ -22,8 +22,8 @@ const int LuikWelterusten = 35;  // lichtwaarde wanneer luik dicht
 
 const int LuikMetingen = 5;    // het gemiddelde van aantal metingen waarop beslist wordt
 const int intervalwaarde = 60; // aantal seconden pause tussen metingen
-const int motortin1Pin = 4;    // controller in1  D4
-const int motortin2Pin = 5;    // controller in2  D5
+const int motorClosePin = 4;   // controller in1  D4
+const int motorOpenPin = 5;    // controller in2  D5
 const int LEDClosedPin = 9;    // green LED - door closed  D9
 const int LEDOpenPin = 7;      // red LED - door open D7
 const int magneetPin = A1;     // magneetswitch   A1
@@ -35,6 +35,7 @@ const int LuikSluitMS = 3000; // maximaal aantal milliseconden om Luik te sluite
 int status = 0; // alles ok
 int toggle = 0;
 bool logit = false;
+bool IsLuikGeslotenMetMotor;
 
 int intMeetMoment = 0;        // positie in array met lichtmetingen
 uint16_t Licht[LuikMetingen]; // array met de lichtmetingen
@@ -74,8 +75,8 @@ void setup(void)
   Serial.println("Clock module not included");
 #endif
 
-  pinMode(motortin1Pin, OUTPUT);
-  pinMode(motortin2Pin, OUTPUT);
+  pinMode(motorClosePin, OUTPUT);
+  pinMode(motorOpenPin, OUTPUT);
   pinMode(ldrPin, INPUT);            //ldr+plus en ldr+port+10k
   pinMode(magneetPin, INPUT_PULLUP); //tussen 0 en de pin
   pinMode(LED_BUILTIN, OUTPUT);
@@ -88,6 +89,10 @@ void setup(void)
   SetStatusLed(false);
 
   logit = true;
+
+  IsLuikGeslotenMetMotor = IsLuikGesloten();
+
+  SetLEDOpenClosed();
 
   LichtMeting(true);
 
@@ -127,14 +132,14 @@ bool IsLuikGesloten()
 
 void MotorUit(void)
 {
-  digitalWrite(motortin1Pin, LOW);
-  digitalWrite(motortin2Pin, LOW);
+  digitalWrite(motorClosePin, LOW);
+  digitalWrite(motorOpenPin, LOW);
 }
 
 void MotorOpenLuik(void)
 {
-  digitalWrite(motortin1Pin, LOW);
-  digitalWrite(motortin2Pin, HIGH);
+  digitalWrite(motorClosePin, LOW);
+  digitalWrite(motorOpenPin, HIGH);
 
   TimeLuikOpen = millis();
 #if defined ClockModule
@@ -145,8 +150,8 @@ void MotorOpenLuik(void)
 
 void MotorSluitLuik(void)
 {
-  digitalWrite(motortin1Pin, HIGH);
-  digitalWrite(motortin2Pin, LOW);
+  digitalWrite(motorClosePin, HIGH);
+  digitalWrite(motorOpenPin, LOW);
 
   TimeLuikGesloten = millis();
 #if defined ClockModule
@@ -209,7 +214,8 @@ void SluitLuik(void)
     if (status == 0)
     {
       Serial.println("Luik gesloten");
-      digitalWrite(LEDClosedPin, HIGH);
+      SetLEDOpenClosed();
+      IsLuikGeslotenMetMotor = true;
     }
     else
       Serial.println("Oops, luik *niet* gesloten");
@@ -219,35 +225,39 @@ void SluitLuik(void)
 void OpenLuik(void)
 {
   Serial.println("Openen luik");
-  if (IsLuikGesloten())
-  {
-    MotorOpenLuik();
-    delay(LuikOpenMS); // Er is geen detectie op luik volledig open daarom wordt de motor vast LuikOpenMS milliseconden aangezet en dan zou het luik open moeten zijn
-  }
 
-  MotorUit();
-
-  // controle luik open
-  status = 1;
-  for (int i = 0; i < 10 && status != 0; i++)
+  if (IsLuikGeslotenMetMotor)
   {
-    delay(100);
-    if (!IsLuikGesloten())
-      status = 0;
+    if (IsLuikGesloten())
+    {
+      MotorOpenLuik();
+      delay(LuikOpenMS); // Er is geen detectie op luik volledig open daarom wordt de motor vast LuikOpenMS milliseconden aangezet en dan zou het luik open moeten zijn
+      MotorUit();
+    }
+
+    // controle luik open
+    status = 1;
+    for (int i = 0; i < 10 && status != 0; i++)
+    {
+      delay(100);
+      if (!IsLuikGesloten())
+        status = 0;
+      else
+        Serial.println("Luik niet open, nog eens controleren");
+    }
+
+    digitalWrite(LEDOpenPin, LOW);
+    digitalWrite(LEDClosedPin, LOW);
+
+    if (status == 0)
+    {
+      Serial.println("Luik open");
+      SetLEDOpenClosed();
+      IsLuikGeslotenMetMotor = false;
+    }
     else
-      Serial.println("Luik niet open, nog eens controleren");
+      Serial.println("Oops, luik *niet* open");
   }
-
-  digitalWrite(LEDOpenPin, LOW);
-  digitalWrite(LEDClosedPin, LOW);
-
-  if (status == 0)
-  {
-    digitalWrite(LEDOpenPin, HIGH);
-    Serial.println("Luik open");
-  }
-  else
-    Serial.println("Oops, luik *niet* open");
 }
 
 void LichtMeting(bool init)
@@ -307,7 +317,7 @@ int ProcesLuik(bool openen)
 
   LichtBerekening(gemiddelde, minimum, maximum, donkerder, lichter);
 
-  int LED = 0;
+  int ret = 0;
 
   if (status != 0)
   {
@@ -319,51 +329,58 @@ int ProcesLuik(bool openen)
 
   // beslissen of luik open, dicht of blijven moet
   else if (gemiddelde <= LuikWelterusten)
+  {
     SluitLuik();
+    ret = motorClosePin;
+  }
 
   else if (gemiddelde >= LuikGoedemorgen)
   {
     if (openen && IsLuikGesloten())
     {
-      byte minute = 0, hour = 24;
-      if (HasClockModule)
-      {
-#if defined ClockModule
-        // retrieve data from DS3231
-        readDS3231time(NULL, &minute, &hour, NULL, NULL, NULL, NULL);
-#endif
-      }
-      else if (HMtime != 0)
-      {
-        unsigned long TimeNow = millis();
+      byte hour, minute;
+      GetTime(hour, minute);
 
-        GetTime(TimeNow, TimeNow, &hour, &minute);
-      }
       if (hour > StartHourLuikOpen || (hour == StartHourLuikOpen && minute >= StartMinuteLuikOpen))
+      {
         OpenLuik();
+        ret = motorOpenPin;
+      }
     }
   }
 
   else if (donkerder > lichter && minimum <= LuikWelterusten) // Het wordt donkerder en de minimum lichtmeting ligt onder de waarde om te sluiten => bijna tijd om te sluiten
-    LED = LEDClosedPin;
+    ret = LEDClosedPin;
 
   else if (lichter > donkerder && maximum >= LuikGoedemorgen) // Het wordt lichter en de maximum lichtmeting ligt boven de waarde om te openen => bijna tijd om te openen
-    LED = LEDOpenPin;
+  {
+    byte hour, minute;
+    GetTime(hour, minute);    
 
-  return LED;
+    int StartHourLuikOpen1 = StartHourLuikOpen;
+    int StartMinuteLuikOpen1 = StartMinuteLuikOpen - 5; // 5 minutes before earliest open time it may start to blink
+    if (StartMinuteLuikOpen1 < 0)
+    {
+      StartHourLuikOpen1--;
+      StartMinuteLuikOpen1 += 60;
+    }
+    if (hour > StartHourLuikOpen1 || (hour == StartHourLuikOpen1 && minute >= StartMinuteLuikOpen1))
+      ret = LEDOpenPin;
+  }
+
+  return ret;
 }
 
 void loop(void)
 {
-  static int LED = 0;
+  static int ret = 0;
 
   //taakafhandeling. Moet elke minuut
   for (int intervalteller = intervalwaarde; intervalteller > 0; intervalteller--)
   {
     delay(1000);
 
-    int LED0 = LED;
-    LED = ProcesLuik(false); // 's nachts elke seconde controleren als luik nog steeds toe is. Indien niet dan laten sluiten
+    ret = ProcesLuik(false); // 's nachts elke seconde controleren als luik nog steeds toe is. Indien niet dan laten sluiten
 
     if (status != 0)
     {
@@ -375,28 +392,17 @@ void loop(void)
       digitalWrite(LEDOpenPin, toggle % 2 == 0 ? LOW : HIGH);
     }
 
-    else if (LED == LEDClosedPin || LED == LEDOpenPin)
+    else if ((ret == LEDClosedPin || ret == LEDOpenPin) && IsLuikGeslotenMetMotor == IsLuikGesloten())
     {
       if (++toggle > 1)
         toggle = 0;
 
-      digitalWrite(LED, toggle == 0 ? LOW : HIGH);
-      digitalWrite(LED == LEDClosedPin ? LEDOpenPin : LEDClosedPin, LOW);
+      digitalWrite(ret, toggle == 0 ? LOW : HIGH);
+      digitalWrite(ret == LEDClosedPin ? LEDOpenPin : LEDClosedPin, LOW);
     }
 
-    else if (LED0 != 0)
-    {
-      if (IsLuikGesloten())
-      {
-        digitalWrite(LEDOpenPin, LOW);
-        digitalWrite(LEDClosedPin, HIGH);
-      }
-      else
-      {
-        digitalWrite(LEDClosedPin, LOW);
-        digitalWrite(LEDOpenPin, HIGH);
-      }
-    }
+    else    
+      SetLEDOpenClosed();
 
     info(intervalteller, logit);
 
@@ -404,7 +410,22 @@ void loop(void)
   }
 
   LichtMeting(false);
-  ProcesLuik(true);
+
+  ProcesLuik(IsLuikGeslotenMetMotor == IsLuikGesloten()); // Indien het luik manueel is gesloten dan niet proberen openen.
+}
+
+void SetLEDOpenClosed()
+{
+  if (IsLuikGesloten())
+  {
+    digitalWrite(LEDOpenPin, LOW);
+    digitalWrite(LEDClosedPin, HIGH);
+  }
+  else
+  {
+    digitalWrite(LEDClosedPin, LOW);
+    digitalWrite(LEDOpenPin, HIGH);
+  }
 }
 
 void info(int intervalteller, bool dolog)
@@ -417,7 +438,7 @@ void info(int intervalteller, bool dolog)
       Serial.print(": ");
     }
 
-    Serial.print("LDR waarde: ");
+    Serial.print("LDR: ");
     Serial.print(analogRead(ldrPin));
 
     uint16_t gemiddelde, minimum, maximum, donkerder, lichter;
@@ -432,10 +453,15 @@ void info(int intervalteller, bool dolog)
     else
       Serial.print("open");
 
-    Serial.print(", Open LDR waarde: ");
+    if (IsLuikGeslotenMetMotor)
+      Serial.print(" (toe)");
+    else
+      Serial.print(" (open)");
+
+    Serial.print(", Open LDR: ");
     Serial.print(LuikGoedemorgen);
 
-    Serial.print(", Toe LDR waarde: ");
+    Serial.print(", Toe LDR: ");
     Serial.print(LuikWelterusten);
 
     Serial.print(", Status: ");
@@ -497,6 +523,25 @@ void ShowTime(byte *hour, byte *minute, byte *second)
   }
 }
 #endif
+
+void GetTime(byte &hour, byte &minute)
+{
+  minute = 0;
+  hour = 24;
+  if (HasClockModule)
+  {
+#if defined ClockModule
+    // retrieve data from DS3231
+    readDS3231time(NULL, &minute, &hour, NULL, NULL, NULL, NULL);
+#endif
+  }
+  else if (HMtime != 0)
+  {
+    unsigned long TimeNow = millis();
+
+    GetTime(TimeNow, TimeNow, &hour, &minute);
+  }
+}
 
 void GetTime(unsigned long Time, unsigned long TimeNow, byte *h, byte *m)
 {
