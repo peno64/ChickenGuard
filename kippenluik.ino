@@ -63,7 +63,7 @@ unsigned long HMtime = 0;
 void setup(void)
 {
   Serial.begin(9600);
-  Serial.println("Kippenluik. original Copyright Techniek & Dier aangepast door peno");
+  Serial.println("Kippenluik 10/06/2020. original Copyright Techniek & Dier aangepast door peno");
 
 #if defined ClockModule
   HasClockModule = InitClock();
@@ -319,6 +319,8 @@ int ProcesLuik(bool openen)
 
   int ret = 0;
 
+  bool isLuikGesloten = IsLuikGesloten();
+
   if (status != 0)
   {
     char data[100];
@@ -328,47 +330,41 @@ int ProcesLuik(bool openen)
   }
 
   // beslissen of luik open, dicht of blijven moet
-  else if (gemiddelde <= LuikWelterusten)
+  else if (gemiddelde <= LuikWelterusten && !isLuikGesloten)
   {
     SluitLuik();
     ret = motorClosePin;
   }
 
-  else if (gemiddelde >= LuikGoedemorgen)
+  else if (gemiddelde >= LuikGoedemorgen && openen && isLuikGesloten && MayOpen(0))
   {
-    if (openen && IsLuikGesloten())
-    {
-      byte hour, minute;
-      GetTime(hour, minute);
-
-      if (hour > StartHourLuikOpen || (hour == StartHourLuikOpen && minute >= StartMinuteLuikOpen))
-      {
-        OpenLuik();
-        ret = motorOpenPin;
-      }
-    }
+    OpenLuik();
+    ret = motorOpenPin;
   }
 
-  else if (donkerder > lichter && minimum <= LuikWelterusten) // Het wordt donkerder en de minimum lichtmeting ligt onder de waarde om te sluiten => bijna tijd om te sluiten
+  else if (donkerder > lichter && minimum <= LuikWelterusten && !isLuikGesloten) // Het wordt donkerder en de minimum lichtmeting ligt onder de waarde om te sluiten => bijna tijd om te sluiten
     ret = LEDClosedPin;
 
-  else if (lichter > donkerder && maximum >= LuikGoedemorgen) // Het wordt lichter en de maximum lichtmeting ligt boven de waarde om te openen => bijna tijd om te openen
-  {
-    byte hour, minute;
-    GetTime(hour, minute);    
-
-    int StartHourLuikOpen1 = StartHourLuikOpen;
-    int StartMinuteLuikOpen1 = StartMinuteLuikOpen - 5; // 5 minutes before earliest open time it may start to blink
-    if (StartMinuteLuikOpen1 < 0)
-    {
-      StartHourLuikOpen1--;
-      StartMinuteLuikOpen1 += 60;
-    }
-    if (hour > StartHourLuikOpen1 || (hour == StartHourLuikOpen1 && minute >= StartMinuteLuikOpen1))
-      ret = LEDOpenPin;
-  }
+  else if (lichter > donkerder && maximum >= LuikGoedemorgen && isLuikGesloten && MayOpen(-LuikMetingen / 2)) // Het wordt lichter en de maximum lichtmeting ligt boven de waarde om te openen => bijna tijd om te openen
+    ret = LEDOpenPin;
 
   return ret;
+}
+
+bool MayOpen(int delta)
+{
+  byte hour, minute;
+  GetTime(hour, minute);
+
+  int StartHourLuikOpen1 = StartHourLuikOpen;
+  int StartMinuteLuikOpen1 = StartMinuteLuikOpen + delta;
+  if (StartMinuteLuikOpen1 < 0)
+  {
+    StartHourLuikOpen1--;
+    StartMinuteLuikOpen1 += 60;
+  }
+
+  return (hour > StartHourLuikOpen1 || (hour == StartHourLuikOpen1 && minute >= StartMinuteLuikOpen1));
 }
 
 void loop(void)
