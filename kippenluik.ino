@@ -63,7 +63,7 @@ unsigned long HMtime = 0;
 void setup(void)
 {
   Serial.begin(9600);
-  Serial.println("Kippenluik 10/06/2020. original Copyright Techniek & Dier aangepast door peno");
+  Serial.println("Kippenluik 12/06/2020. original Copyright Techniek & Dier aangepast door peno");
 
 #if defined ClockModule
   HasClockModule = InitClock();
@@ -279,16 +279,12 @@ void LichtMeting(bool init)
   }
 }
 
-void LichtBerekening(uint16_t &gemiddelde, uint16_t &minimum, uint16_t &maximum, uint16_t &donkerder, uint16_t &lichter)
+void LichtBerekening(uint16_t &gemiddelde, uint16_t &minimum, uint16_t &maximum)
 {
-  // gemiddelde van de array berekenen, minimale en maximale waarde bepalen en bepalen als het donkerder of lichter wordt
+  // gemiddelde van de array berekenen, minimale en maximale waarde bepalen.
   gemiddelde = 0;
   minimum = LuikWelterusten + 1;
   maximum = 0;
-  int intMeetMoment1 = intMeetMoment == 0 ? LuikMetingen - 1 : intMeetMoment - 1;
-  uint16_t licht0 = Licht[intMeetMoment1]; // laatste lichtmeting
-  donkerder = 0;
-  lichter = 0;
 
   for (int teller = LuikMetingen - 1; teller >= 0; teller--)
   {
@@ -297,15 +293,6 @@ void LichtBerekening(uint16_t &gemiddelde, uint16_t &minimum, uint16_t &maximum,
       maximum = Licht[teller];
     if (Licht[teller] < minimum)
       minimum = Licht[teller];
-    intMeetMoment1 = intMeetMoment1 == 0 ? LuikMetingen - 1 : intMeetMoment1 - 1;
-    if (teller > 0)
-    {
-      if (licht0 < Licht[intMeetMoment1])      // als de lichtmeting ervoor minder is dan is het donkerder geworden
-        donkerder++;                           // aantal keren donkerder
-      else if (licht0 > Licht[intMeetMoment1]) // als de lichtmeting ervoor meer is dan is het lichter geworden
-        lichter++;                             // aantal keren lichter
-      licht0 = Licht[intMeetMoment1];
-    }
   }
 
   gemiddelde = gemiddelde / LuikMetingen;
@@ -313,9 +300,9 @@ void LichtBerekening(uint16_t &gemiddelde, uint16_t &minimum, uint16_t &maximum,
 
 int ProcesLuik(bool openen)
 {
-  uint16_t gemiddelde, minimum, maximum, donkerder, lichter;
+  uint16_t gemiddelde, minimum, maximum;
 
-  LichtBerekening(gemiddelde, minimum, maximum, donkerder, lichter);
+  LichtBerekening(gemiddelde, minimum, maximum);
 
   int ret = 0;
 
@@ -328,6 +315,9 @@ int ProcesLuik(bool openen)
     sprintf(data, "Iets is niet ok (%d - %s); idle", status, status == 1 ? "luik niet open" : status == 2 ? "luik niet gesloten na timeout" : "luik niet gesloten na 10 keer proberen aanspannen");
     Serial.println(data);
   }
+
+  else if (IsLuikGeslotenMetMotor != isLuikGesloten)
+  /* luik is manueel gesloten ipv automatisch met de motor. Doe niets tot het terug manueel wordt geopend. */;
 
   // beslissen of luik open, dicht of blijven moet
   else if (gemiddelde <= LuikWelterusten && !isLuikGesloten)
@@ -342,10 +332,10 @@ int ProcesLuik(bool openen)
     ret = motorOpenPin;
   }
 
-  else if (donkerder > lichter && minimum <= LuikWelterusten && !isLuikGesloten) // Het wordt donkerder en de minimum lichtmeting ligt onder de waarde om te sluiten => bijna tijd om te sluiten
+  else if (minimum <= LuikWelterusten && !isLuikGesloten) // De minimum lichtmeting ligt onder de waarde om te sluiten en luik is niet gesloten => bijna tijd om te sluiten
     ret = LEDClosedPin;
 
-  else if (lichter > donkerder && maximum >= LuikGoedemorgen && isLuikGesloten && MayOpen(-LuikMetingen / 2)) // Het wordt lichter en de maximum lichtmeting ligt boven de waarde om te openen => bijna tijd om te openen
+  else if (maximum >= LuikGoedemorgen && isLuikGesloten && MayOpen(-LuikMetingen / 2)) // De maximum lichtmeting ligt boven de waarde om te openen => bijna tijd om te openen
     ret = LEDOpenPin;
 
   return ret;
@@ -388,7 +378,7 @@ void loop(void)
       digitalWrite(LEDOpenPin, toggle % 2 == 0 ? LOW : HIGH);
     }
 
-    else if ((ret == LEDClosedPin || ret == LEDOpenPin) && IsLuikGeslotenMetMotor == IsLuikGesloten())
+    else if (ret == LEDClosedPin || ret == LEDOpenPin)
     {
       if (++toggle > 1)
         toggle = 0;
@@ -437,9 +427,9 @@ void info(int intervalteller, bool dolog)
     Serial.print("LDR: ");
     Serial.print(analogRead(ldrPin));
 
-    uint16_t gemiddelde, minimum, maximum, donkerder, lichter;
+    uint16_t gemiddelde, minimum, maximum;
 
-    LichtBerekening(gemiddelde, minimum, maximum, donkerder, lichter);
+    LichtBerekening(gemiddelde, minimum, maximum);
     Serial.print(", ~: ");
     Serial.print(gemiddelde);
 
