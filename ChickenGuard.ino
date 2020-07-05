@@ -2,45 +2,44 @@
   Chicken guard
 
   Opens and closes the chicken door in the morning and evening.
-  A light sensor is used to determine when it is openen and closed. 
+  A light sensor is used to determine when it is openen and closed.
   However also a clock module (DS3231) can be attached to not open the door before a given time.
   This for the summertime to not open it too soon. Early in the morning when there is already light but not many people are awake the preditors are still around...
-  But even without that clock module it is possible to work on time via the timer from the arduino. 
-  Unfortunately this timer is not very acurate and after a couple of days it is already seconds out of sync. 
+  But even without that clock module it is possible to work on time via the timer from the arduino.
   For this to work, the current time must be provided each time the arduino resets.
   This is not the case with the timer module because it works on its own and it even has a battery to keep the time when power is disconnected.
   So for that timer module the date/time must only be set once.
-  
+
   Two leds also show if the door is (about to) open or closed and also to show if there is an error.
-  When the door is open, the red led is on. When the door is closed, the green led is on. 
+  When the door is open, the red led is on. When the door is closed, the green led is on.
   The colors are chosen as such because green means the chickens are safe and red means they are unsafe.
   I chose for a 2-in-one led (with 3 connections)
-  
-  A minute or two before the opening/closing the red or green led starts to blink every second to indicate the event is about to happen.  
-  
-  When it is dark and thus the door should be closed, the system checks every second if the magnetic switch still says that the door is closed. 
+
+  A minute or two before the opening/closing the red or green led starts to blink every second to indicate the event is about to happen.
+
+  When it is dark and thus the door should be closed, the system checks every second if the magnetic switch still says that the door is closed.
   If not, then it closes the door again. This in case an agressor tries to open the door (by pulling it).
 
   If the door is closed manually during the day (for example because the chickens may not enter or exit the henhouse), the system will not run the motor anymore to open or close
-  the door until the door is manually opened again. This must of course be done during light when the door is supposed to be open. 
-  Also the leds will not change anymore until the door is opened again. 
-  Opening the door again can then be done during light or dark. 
+  the door until the door is manually opened again. This must of course be done during light when the door is supposed to be open.
+  Also the leds will not change anymore until the door is opened again.
+  Opening the door again can then be done during light or dark.
   In dark, the door will then close again via the motor and when light the door will stay open until it becomes dark.
 
   If there is an error, the red led will blink as many times as the error status and then two seconds off and then blink again.
 
   When power is switched on, the first minute nothing will happen and the system waits for commands you can enter.
   Each time a command is given, the minute starts again. There are commands to manually open and close the door, doing this repeatingly, ... H gives a help screen.
-  
+
   Then it starts with first closing the door (if it is not closed yet) and then depending on the light it stays closed (night) or opens (day).
   This is done as such because a magnet switch can detect if the door is closed. When the magnet is not at the switch, the door is (possible only partially) open.
   As such the system knows after this exactly if the door is open or closed.
   So closing the door is done until the magnet switch says it is closed but there is also a timer to make sure the motor doesn't stay on if something goes wrong and then the system goes into error
   Opening the door is done with a timer because the system has no detector if it is completely open. It is not a problem if the motor runs a bit longer because this means only that the cable is looser.
-  Note that not a hard cable is used on the door but an elastic. That way when the door is closed there is some elastic on the cable. 
-  Also when the system detects that the door is closed it will close it again for a couple of milliseconds to tighten it extra. 
+  Note that not a hard cable is used on the door but an elastic. That way when the door is closed there is some elastic on the cable.
+  Also when the system detects that the door is closed it will close it again for a couple of milliseconds to tighten it extra.
   This is tried max 10 times because it can happen that the motor cannot hold the force and returns a bit but it practice most of the time only 1 time must be tried.
-  Since my door is a trap door (like a medieval castle), also an elastic is on the outside to pull it open the first centimeters (and then gravity takes over). 
+  Since my door is a trap door (like a medieval castle), also an elastic is on the outside to pull it open the first centimeters (and then gravity takes over).
   I use an elastic used for bicycles to hold things on the rack.
 
   Make sure that the door is not closed and that there is enough light (daytime) the first time the system is taken into operation.
@@ -86,7 +85,7 @@ unsigned long msOpened = 0;         // millis() value of last door open
 unsigned long msClosed = 0;         // millis() value of last door close
 
 const byte startHourOpen = 7;       // minimum hour that door may open
-const byte startMinuteOpen = 30;    // minimum minute that door may close
+const byte startMinuteOpen = 0;     // minimum minute that door may close
 
 bool hasClockModule = false;        // Is the clock module detected
 
@@ -98,15 +97,32 @@ byte hourClosed = 0;                // hour of last door close
 byte minuteClosed = 0;              // hour of last door close
 #endif
 
+const byte dstDay = 1;              // day on which DST is changed. 1 = sunday
+const byte dstMinutes = 60;         // number of minutes on DST change
+
+const byte summerMonth = 3;         // month that summertime begins
+const int summerDstDayWeek = -1;    // week in summerMonth that summertime begins. Positive means starting from the beginning from the month, negative from the end of the month (-1 = last week)
+const byte summerHour = 2;          // hour that summertime begins
+
+const byte winterMonth = 10;        // month that wintertime begins
+const int winterDstDayWeek = -1;    // week in winterMonth that summertime begins. Positive means starting from the beginning from the month, negative from the end of the month (-1 = last week)
+const byte winterHour = 3;          // hour that wintertime begins
+
+bool dstAdjust = true;              // Is there still a possible adjust today?
+
 unsigned long msTime = 0;           // millis() value of set time
+int dayTime = 0;                    // set day at msTime
+int monthTime = 0;                  // set month at msTime
+int yearTime = 0;                   // set year at msTime
 int hourTime = 0;                   // set hour at msTime
 int minuteTime = 0;                 // set minute at msTime
+int secondsTime = 0;                // set seconds at msTime
 
 // arduino function called when it starts or a reset is done
 void setup(void)
 {
   Serial.begin(9600);
-  Serial.println("Chicken hatch 13/06/2020. Original Copyright Techniek & Dier. Modified by peno");
+  Serial.println("Chicken hatch 23/06/2020. Original Copyright Techniek & Dier. Modified by peno");
 
 #if defined ClockModule
   hasClockModule = InitClock();
@@ -157,7 +173,7 @@ void setup(void)
   Close(); // Via the magnet switch we know for sure that the door is closed hereafter
 
   LightMeasurement(true); // fill the whole light measurement array with the current light value
-  
+
   Process(true); // opens the door if light and lets it closed if dark
 }
 
@@ -375,14 +391,14 @@ int Process(bool mayOpen)
     // door is manually closed instead of automatically with the motor. Do nothing until manually opened again
     ;
 
-  // If the average is less than ldrEvening and the door is not closed then close it 
+  // If the average is less than ldrEvening and the door is not closed then close it
   else if (average <= ldrEvening && !isClosed)
   {
     Close();
     ret = motorClosePin;
   }
 
-  // If the average is greater than ldrMorning and the door may open and it is closed and it may open by time then open it 
+  // If the average is greater than ldrMorning and the door may open and it is closed and it may open by time then open it
   else if (average >= ldrMorning && mayOpen && isClosed && MayOpen(0))
   {
     Open();
@@ -455,6 +471,8 @@ void loop(void)
 
     Command();
   }
+
+  DSTCorrection();
 
   LightMeasurement(false);
 
@@ -532,16 +550,16 @@ void info(int measureEverySecond, bool dolog)
     }
     else
     {
-      unsigned long TimeNow = millis();
+      unsigned long timeNow = millis();
 
       Serial.print(", Time now: ");
-      ShowTime(TimeNow, TimeNow);
+      ShowTime(timeNow, timeNow);
 
       Serial.print(", Time open: ");
-      ShowTime(msOpened, TimeNow);
+      ShowTime(msOpened, timeNow);
 
       Serial.print(", Time closed: ");
-      ShowTime(msClosed, TimeNow);
+      ShowTime(msClosed, timeNow);
     }
 
     Serial.println();
@@ -583,13 +601,20 @@ void GetTime(byte &hour, byte &minute)
   }
   else if (msTime != 0)
   {
-    unsigned long TimeNow = millis();
+    unsigned long timeNow = millis();
 
-    GetTime(TimeNow, TimeNow, &hour, &minute);
+    GetTime(timeNow, timeNow, hour, minute);
   }
 }
 
-void GetTime(unsigned long time, unsigned long timeNow, byte *h, byte *m)
+void GetTime(unsigned long time, unsigned long timeNow, byte &hour, byte &minute)
+{
+  byte year, month, day;
+
+  GetTime(time, timeNow, year, month, day, hour, minute);
+}
+
+void GetTime(unsigned long time, unsigned long timeNow, byte &year, byte &month, byte &day, byte &hour, byte &minute)
 {
   if (msTime != 0 && time >= msTime)
   {
@@ -601,6 +626,9 @@ void GetTime(unsigned long time, unsigned long timeNow, byte *h, byte *m)
     ms -= hours * 60 * 60 * 1000;
     unsigned long minutes = ms / 1000 / 60;
 
+    unsigned long D1 = dayTime + days;
+    unsigned long M1 = monthTime;
+    unsigned long Y1 = yearTime;
     unsigned long h1 = hourTime + hours;
     unsigned long m1 = minuteTime + minutes;
     while (m1 >= 60)
@@ -609,13 +637,29 @@ void GetTime(unsigned long time, unsigned long timeNow, byte *h, byte *m)
       m1 -= 60;
     }
     while (h1 >= 24)
+    {
       h1 -= 24;
+      D1++;
+    }
+    while (D1 > daysInMonth(Y1, M1))
+    {
+      D1 -= daysInMonth(Y1, M1);
+      M1++;
+      if (M1 > 12)
+      {
+        Y1++;
+        M1 = 1;
+      }
+    }
 
-    *h = (byte)h1;
-    *m = (byte)m1;
+    year = (byte)Y1;
+    month = (byte)M1;
+    day = (byte)D1;
+    hour = (byte)h1;
+    minute = (byte)m1;
   }
   else
-    *h = *m = 0;
+    year = month = day = hour = minute = 0;
 }
 
 void ShowTime(unsigned long time, unsigned long timeNow)
@@ -649,11 +693,11 @@ void ShowTime(unsigned long time, unsigned long timeNow)
   {
     if (time >= msTime)
     {
-      byte h, m;
+      byte hour, minute;
 
-      GetTime(time, timeNow, &h, &m);
+      GetTime(time, timeNow, hour, minute);
 
-      sprintf(data, "%02d:%02d", (int)h, (int)m);
+      sprintf(data, "%02d:%02d", (int)hour, (int)minute);
       Serial.print(data);
     }
     else
@@ -726,28 +770,37 @@ bool Command()
         WaitForInput("Press enter to continue");
     }
 
-    else if (answer.substring(0, 1) == "T") // current time arduino: hh:mm
+    else if (answer.substring(0, 2) == "AT") // current date/time arduino: dd/mm/yy hh:mm:ss
     {
-      int h = answer.substring(1, 3).toInt();
-      int m = answer.substring(4, 6).toInt();
-      if (h != 0 || m != 0)
+      int day = answer.substring(2, 4).toInt();
+      int month = answer.substring(5, 7).toInt();
+      int year = answer.substring(8, 10).toInt();
+
+      int hour = answer.substring(11, 13).toInt();
+      int minute = answer.substring(14, 16).toInt();
+      int sec = answer.substring(17, 19).toInt();
+      if (day != 0 && month != 0 && year != 0)
       {
-        hourTime = h;
-        minuteTime = m;
+        dayTime = day;
+        monthTime = month;
+        yearTime = year;
+        hourTime = hour;
+        minuteTime = minute;
+        secondsTime = sec;
         msTime = millis();
       }
     }
 
 #if defined ClockModule
-    else if (answer.substring(0, 1) == "D") // current date/time: dd/mm/yy hh:mm:ss clock module
+    else if (answer.substring(0, 2) == "CT") // current date/time clock module: dd/mm/yy hh:mm:ss
     {
-      int day = answer.substring(1, 3).toInt();
-      int month = answer.substring(4, 6).toInt();
-      int year = answer.substring(7, 9).toInt();
+      int day = answer.substring(2, 4).toInt();
+      int month = answer.substring(5, 7).toInt();
+      int year = answer.substring(8, 10).toInt();
 
-      int hour = answer.substring(10, 12).toInt();
-      int minute = answer.substring(13, 15).toInt();
-      int sec = answer.substring(16, 18).toInt();
+      int hour = answer.substring(11, 13).toInt();
+      int minute = answer.substring(14, 16).toInt();
+      int sec = answer.substring(17, 19).toInt();
       if (day != 0 && month != 0 && year != 0)
         setDS3231time(sec, minute, hour, 0, day, month, year);
     }
@@ -827,9 +880,9 @@ bool Command()
       Serial.println("3: Led open and closed on");
       Serial.println("I: Info");
       Serial.println("L: Log toggle");
-      Serial.println("T<hh:mm>: set current time timer arduino");
+      Serial.println("AT<dd/mm/yy hh:mm:ss>: set arduino timer date/time");
 #if defined ClockModule
-      Serial.println("D<dd/mm/yy hh:mm:ss>: Set  clockmodule current date/time");
+      Serial.println("CT<dd/mm/yy hh:mm:ss>: Set clockmodule date/time");
 #endif
 #if defined ClockModule
       Serial.println("W: Warmth ( temperature)");
@@ -844,6 +897,105 @@ bool Command()
   }
 
   return false;
+}
+
+bool isLeapYear(int year)
+{
+  return (year % 4) == 0; // should also test on per 100 year and per 400 year but when that comes this program will not be there anymore...
+}
+
+int dayofweek(int year, int month, int day)
+{
+  static byte t[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
+  year -= month < 3;
+  return (year + year / 4 - year / 100 + year / 400 + t[month - 1] + day) % 7;
+}
+
+int daysInMonth(int year, int month)
+{
+  static byte days[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+
+  return days[month - 1] + (month == 2 && isLeapYear(year) ? 1 : 0);
+}
+
+void DSTCorrection()
+{
+  byte second, minute, hour, dayOfWeek, dayOfMonth, month, year;
+
+#if defined ClockModule
+  if (hasClockModule)
+    readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
+  else
+#endif
+  {
+    unsigned long timeNow = millis();
+
+    GetTime(timeNow, timeNow, year, month, dayOfMonth, hour, minute);
+    dayOfWeek = dayofweek(2000 + year, month, dayOfMonth) + 1;
+  }
+
+  if (dayOfWeek != dstDay)
+    dstAdjust = true;
+  else if (dstAdjust)
+  {
+    int dstDayWeek = 0;
+    int adjustMinutes = 0;
+
+    if (month == summerMonth && hour == summerHour)
+    {
+      dstDayWeek = summerDstDayWeek;
+      adjustMinutes = +dstMinutes;
+    }
+    else if (month == winterMonth && hour == winterHour)
+    {
+      dstDayWeek = winterDstDayWeek;
+      adjustMinutes = -dstMinutes;
+    }
+
+    if (adjustMinutes != 0)
+    {        
+      int weekDays = 7;
+      int lastDay = daysInMonth(year, month);
+      int firstDay = summerDstDayWeek > 0 ? 1 : lastDay - weekDays + 1;
+      lastDay = summerDstDayWeek > 0 ? weekDays : lastDay;
+
+      if (dstDayWeek < 0)
+      {
+        dstDayWeek = -dstDayWeek;
+        weekDays = -weekDays;
+      }
+
+      int day = ((int)dayOfMonth) - (dstDayWeek - 1) * weekDays;
+      if (day >= firstDay && day <= lastDay)
+      {
+#if defined ClockModule
+        if (hasClockModule)
+        {
+          readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
+          minute += adjustMinutes % 60;
+          while (minute >= 60)
+          {
+            hour++;
+            minute -= 60;
+          }
+          hour += adjustMinutes / 60;
+          setDS3231time(second, minute, hour, dayOfWeek, dayOfMonth, month, year);
+        }
+        else
+#endif
+        {
+          minuteTime += adjustMinutes % 60;
+          while (minuteTime >= 60)
+          {
+            hourTime++;
+            minuteTime -= 60;
+          }
+          hourTime += adjustMinutes / 60;
+        }
+        dstAdjust = false;
+      }
+    }
+  }
 }
 
 #if defined ClockModule
@@ -873,7 +1025,7 @@ bool InitClock()
 void setDS3231time(byte second, byte minute, byte hour, byte dayOfWeek, byte dayOfMonth, byte month, byte year)
 {
   if (dayOfWeek == 0)
-    dayOfWeek = dayofweek(dayOfMonth, month, 2000 + year) + 1;
+    dayOfWeek = dayofweek(2000 + year, month, dayOfMonth) + 1;
   // sets time and date data to DS3231
   Wire.beginTransmission(DS3231_I2C_ADDRESS);
   Wire.write(0);                    // set next input to start at the seconds register
@@ -885,13 +1037,6 @@ void setDS3231time(byte second, byte minute, byte hour, byte dayOfWeek, byte day
   Wire.write(decToBcd(month));      // set month
   Wire.write(decToBcd(year));       // set year (0 to 99)
   Wire.endTransmission();
-}
-
-int dayofweek(int d, int m, int y)
-{
-  static int t[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
-  y -= m < 3;
-  return (y + y / 4 - y / 100 + y / 400 + t[m - 1] + d) % 7;
 }
 
 void readDS3231time(byte *second,
