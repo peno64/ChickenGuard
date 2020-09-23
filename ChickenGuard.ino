@@ -72,6 +72,8 @@ const int ldrPin = A2;              // LDR (light sensor) A2
 
 const int openMilliseconds = 1300;  // number of milliseconds to open door
 const int closeMilliseconds = 3000; // maximal number of milliseconds to close door
+const int closeWaitTime1 = 1000;    // after this much milliseconds, stop closing door ...
+const int closeWaitTime2 = 1000;    // ... for this much of milliseconds and then continue closing the door
 
 int status = 0;                     // status. 0 = all ok
 int toggle = 0;                     // led blinking toggle
@@ -234,14 +236,24 @@ void Close(void)
     MotorClose();
 
     // run the motor until magnetic switch detects closed or maximum closeMilliseconds milliseconds (for safety if something goes wrong)
+    // after closeWaitTime1 the motor stops for closeWaitTime2 milliseconds such that the door is again in rest because the elastic lets it vibrate
     int ElapsedTime = 0;
     unsigned long StartTime = millis();
+    bool waited = false;
     while (!IsClosed() && ElapsedTime < closeMilliseconds)
-    {
+    {      
       unsigned long CurrentTime = millis();
       if (CurrentTime < StartTime) // overflow safety
         StartTime = CurrentTime;
       ElapsedTime = CurrentTime - StartTime;
+      if (!waited && ElapsedTime >= closeWaitTime1)
+      {
+        MotorOff();
+        delay(closeWaitTime2);
+        waited = true;
+        StartTime += closeWaitTime2;
+        MotorClose();
+      }
     }
 
     MotorOff();
