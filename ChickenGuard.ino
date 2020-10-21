@@ -2,7 +2,7 @@
   Chicken guard
 
   Opens and closes the chicken door in the morning and evening.
-  A light sensor is used to determine when it is openen and closed.
+  A light sensor is used to determine when it is opened and closed.
   However also a clock module (DS3231) can be attached to not open the door before a given time.
   This for the summertime to not open it too soon. Early in the morning when there is already light but not many people are awake the preditors are still around...
   But even without that clock module it is possible to work on time via the timer from the arduino.
@@ -70,7 +70,7 @@ const int ledOpenedPin = 7;         // red LED - door open  D7
 const int magnetPin = A1;           // magnet switch  A1
 const int ldrPin = A2;              // LDR (light sensor) A2
 
-const int openMilliseconds = 1300;  // number of milliseconds to open door
+const int openMilliseconds = 1200;  // number of milliseconds to open door
 const int closeMilliseconds = 3000; // maximal number of milliseconds to close door
 const int closeWaitTime1 = 1000;    // after this much milliseconds, stop closing door ...
 const int closeWaitTime2 = 1000;    // ... for this much of milliseconds and then continue closing the door
@@ -124,7 +124,7 @@ int secondsTime = 0;                // set seconds at msTime
 void setup(void)
 {
   Serial.begin(9600);
-  Serial.println("Chicken hatch 23/06/2020. Original Copyright Techniek & Dier. Modified by peno");
+  Serial.println("Chicken hatch 21/10/2020. Original Copyright Techniek & Dier. Modified by peno");
 
 #if defined ClockModule
   hasClockModule = InitClock();
@@ -241,11 +241,9 @@ void Close(void)
     unsigned long StartTime = millis();
     bool waited = false;
     while (!IsClosed() && ElapsedTime < closeMilliseconds)
-    {      
+    {
       unsigned long CurrentTime = millis();
-      if (CurrentTime < StartTime) // overflow safety
-        StartTime = CurrentTime;
-      ElapsedTime = CurrentTime - StartTime;
+      ElapsedTime = CurrentTime - StartTime; // note that an overflow of millis() is not a problem. ElapsedTime will still be correct
       if (!waited && ElapsedTime >= closeWaitTime1)
       {
         MotorOff();
@@ -428,7 +426,7 @@ int Process(bool mayOpen)
   return ret;
 }
 
-// Check it the current time is later than the may open time - deltaMinutes
+// Check if the current time is later than the may open time - deltaMinutes
 bool MayOpen(int deltaMinutes)
 {
   byte hour, minute;
@@ -819,7 +817,7 @@ bool Command()
 #endif
 
 #if defined ClockModule
-    if (answer.substring(0, 1) == "W") // warmth (temperature)
+    if (answer.substring(0, 1) == "T") // temperature
     {
       Serial.print("Temperature: ");
       Serial.print(readTemperature());
@@ -897,7 +895,7 @@ bool Command()
       Serial.println("CT<dd/mm/yy hh:mm:ss>: Set clockmodule date/time");
 #endif
 #if defined ClockModule
-      Serial.println("W: Warmth ( temperature)");
+      Serial.println("T: Temperature");
 #endif
       Serial.println("H: This help");
 
@@ -965,7 +963,7 @@ void DSTCorrection()
     }
 
     if (adjustMinutes != 0)
-    {        
+    {
       int weekDays = 7;
       int lastDay = daysInMonth(year, month);
       int firstDay = summerDstDayWeek > 0 ? 1 : lastDay - weekDays + 1;

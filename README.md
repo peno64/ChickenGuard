@@ -1,7 +1,7 @@
 # Chicken guard
 
 Opens and closes the chicken door in the morning and evening.
-A light sensor is used to determine when it is openen and closed.
+A light sensor is used to determine when it is opened and closed.
 However also a clock module (DS3231) can be attached to not open the door before a given time.
 This for the summertime to not open it too soon. Early in the morning when there is already light but not many people are awake the preditors are still around...
 But even without that clock module it is possible to work on time via the timer from the arduino.
