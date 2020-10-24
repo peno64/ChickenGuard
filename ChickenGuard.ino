@@ -75,6 +75,8 @@ const int closeMilliseconds = 3000; // maximal number of milliseconds to close d
 const int closeWaitTime1 = 1000;    // after this much milliseconds, stop closing door ...
 const int closeWaitTime2 = 1000;    // ... for this much of milliseconds and then continue closing the door
 
+const unsigned long waitForInputMaxMs = 900000; // maximum wait time for input (900000 ms = 15 min)
+
 int status = 0;                     // status. 0 = all ok
 int toggle = 0;                     // led blinking toggle
 bool logit = false;                 // log to monitor
@@ -124,7 +126,7 @@ int secondsTime = 0;                // set seconds at msTime
 void setup(void)
 {
   Serial.begin(9600);
-  Serial.println("Chicken hatch 21/10/2020. Original Copyright Techniek & Dier. Modified by peno");
+  Serial.println("Chicken hatch 24/10/2020. Original Copyright Techniek & Dier. Modified by peno");
 
 #if defined ClockModule
   hasClockModule = InitClock();
@@ -144,8 +146,8 @@ void setup(void)
   digitalWrite(LED_BUILTIN, LOW);
   pinMode(ledOpenedPin, OUTPUT);
   pinMode(ledClosedPin, OUTPUT);
-  digitalWrite(ledOpenedPin, LOW);
-  digitalWrite(ledClosedPin, LOW);
+
+  SetLEDOff();
 
   SetStatusLed(false);
 
@@ -284,9 +286,8 @@ void Close(void)
       }
     }
 
-    digitalWrite(ledOpenedPin, LOW);
-    digitalWrite(ledClosedPin, LOW);
-
+    SetLEDOff();
+    
     if (status == 0)
     {
       Serial.println("Door closed");
@@ -318,16 +319,15 @@ void Open(void)
     // check max 10 times
     for (int i = 0; i < 10 && status != 0; i++)
     {
-      delay(100);
+      delay(500);
       if (!IsClosed())
         status = 0; // all ok, door is open
       else
         Serial.println("Door not open, check again");
     }
 
-    digitalWrite(ledOpenedPin, LOW);
-    digitalWrite(ledClosedPin, LOW);
-
+    SetLEDOff();
+    
     if (status == 0)
     {
       Serial.println("Door open");
@@ -487,6 +487,12 @@ void loop(void)
   LightMeasurement(false);
 
   Process(isClosedByMotor == IsClosed()); // If the door is manually closed then don't try to open
+}
+
+void SetLEDOff()
+{
+  digitalWrite(ledOpenedPin, LOW);
+  digitalWrite(ledClosedPin, LOW);
 }
 
 void SetLEDOpenClosed()
@@ -719,12 +725,16 @@ String WaitForInput(String question)
 {
   Serial.println(question);
 
-  while (!Serial.available())
+  unsigned long StartTime = millis();
+  unsigned long ElapsedTime = 0;
+  while (!Serial.available() && ElapsedTime < waitForInputMaxMs)
   {
     // wait for input
+    unsigned long CurrentTime = millis();
+    ElapsedTime = CurrentTime - StartTime; // note that an overflow of millis() is not a problem. ElapsedTime will still be correct
   }
 
-  return Serial.readStringUntil(10);
+  return ElapsedTime < waitForInputMaxMs ? Serial.readStringUntil(10) : "";
 }
 
 bool Command()
@@ -760,6 +770,11 @@ bool Command()
 
       if (logit)
         WaitForInput("Press enter to continue");
+    }
+
+    else if (answer.substring(0, 1) == "S") // reset status
+    {
+      status = 0;
     }
 
     else if (answer.substring(0, 1) == "R") // repeat
@@ -857,8 +872,7 @@ bool Command()
 
     else if (answer.substring(0, 1) == "0")
     {
-      digitalWrite(ledOpenedPin, LOW);
-      digitalWrite(ledClosedPin, LOW);
+      SetLEDOff();
     }
 
     else if (answer.substring(0, 1) == "1")
@@ -883,6 +897,7 @@ bool Command()
     {
       Serial.println("O: Open door");
       Serial.println("C: Close door");
+      Serial.println("S: Reset status to 0");
       Serial.println("R<times>: Repeat openen and closing door");
       Serial.println("0: Leds off");
       Serial.println("1: Led open on");
@@ -911,7 +926,7 @@ bool Command()
 
 bool isLeapYear(int year)
 {
-  return (year % 4) == 0; // should also test on per 100 year and per 400 year but when that comes this program will not be there anymore...
+  return (((year % 4) == 0) && ((year % 100) != 0)) || ((year % 400) == 0);
 }
 
 int dayofweek(int year, int month, int day)
