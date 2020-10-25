@@ -756,6 +756,42 @@ bool Command()
       logit = !logit;
     }
 
+    else if (answer.substring(0, 2) == "AT") // current date/time arduino: dd/mm/yy hh:mm:ss
+    {
+      int day = answer.substring(2, 4).toInt();
+      int month = answer.substring(5, 7).toInt();
+      int year = answer.substring(8, 10).toInt();
+
+      int hour = answer.substring(11, 13).toInt();
+      int minute = answer.substring(14, 16).toInt();
+      int sec = answer.substring(17, 19).toInt();
+      if (day != 0 && month != 0 && year != 0)
+      {
+        dayTime = day;
+        monthTime = month;
+        yearTime = year;
+        hourTime = hour;
+        minuteTime = minute;
+        secondsTime = sec;
+        msTime = millis();
+      }
+    }
+
+#if defined ClockModule
+    else if (answer.substring(0, 2) == "CT") // current date/time clock module: dd/mm/yy hh:mm:ss
+    {
+      int day = answer.substring(2, 4).toInt();
+      int month = answer.substring(5, 7).toInt();
+      int year = answer.substring(8, 10).toInt();
+
+      int hour = answer.substring(11, 13).toInt();
+      int minute = answer.substring(14, 16).toInt();
+      int sec = answer.substring(17, 19).toInt();
+      if (day != 0 && month != 0 && year != 0)
+        setDS3231time(sec, minute, hour, 0, day, month, year);
+    }
+#endif
+
     else if (answer.substring(0, 1) == "O") // open
     {
       Open();
@@ -794,42 +830,6 @@ bool Command()
       if (logit)
         WaitForInput("Press enter to continue");
     }
-
-    else if (answer.substring(0, 2) == "AT") // current date/time arduino: dd/mm/yy hh:mm:ss
-    {
-      int day = answer.substring(2, 4).toInt();
-      int month = answer.substring(5, 7).toInt();
-      int year = answer.substring(8, 10).toInt();
-
-      int hour = answer.substring(11, 13).toInt();
-      int minute = answer.substring(14, 16).toInt();
-      int sec = answer.substring(17, 19).toInt();
-      if (day != 0 && month != 0 && year != 0)
-      {
-        dayTime = day;
-        monthTime = month;
-        yearTime = year;
-        hourTime = hour;
-        minuteTime = minute;
-        secondsTime = sec;
-        msTime = millis();
-      }
-    }
-
-#if defined ClockModule
-    else if (answer.substring(0, 2) == "CT") // current date/time clock module: dd/mm/yy hh:mm:ss
-    {
-      int day = answer.substring(2, 4).toInt();
-      int month = answer.substring(5, 7).toInt();
-      int year = answer.substring(8, 10).toInt();
-
-      int hour = answer.substring(11, 13).toInt();
-      int minute = answer.substring(14, 16).toInt();
-      int sec = answer.substring(17, 19).toInt();
-      if (day != 0 && month != 0 && year != 0)
-        setDS3231time(sec, minute, hour, 0, day, month, year);
-    }
-#endif
 
 #if defined ClockModule
     if (answer.substring(0, 1) == "T") // temperature
