@@ -10,7 +10,7 @@
   This is not the case with the timer module because it works on its own and it even has a battery to keep the time when power is disconnected.
   So for that timer module the date/time must only be set once.
 
-  Two leds also show if the door is (about to) open or closed and also to show if there is an error.
+  Two leds also show if the door is (about to) open or close and also to show if there is an error.
   When the door is open, the red led is on. When the door is closed, the green led is on.
   The colors are chosen as such because green means the chickens are safe and red means they are unsafe.
   I chose for a 2-in-one led (with 3 connections)
@@ -26,7 +26,7 @@
   Opening the door again can then be done during light or dark.
   In dark, the door will then close again via the motor and when light the door will stay open until it becomes dark.
 
-  If there is an error, the red led will blink as many times as the error status and then two seconds off and then blink again.
+  If there is an error, the red led will blink as many times as the error status, then once green, then once off and then repeat this.
 
   When power is switched on, the first minute nothing will happen and the system waits for commands you can enter.
   Each time a command is given, the minute starts again. There are commands to manually open and close the door, doing this repeatingly, ... H gives a help screen.
@@ -46,15 +46,17 @@
   That will make the system setup automatically properly. The ax will turn one way or another and eventually wind up the elastic and close the door.
   To open it, the motor will turn the other way and thus unwind the elastic.
 
-  Also when in normal operation commands can still be given. Note that the first minute alot is shown in the output but once in normal operation there is no much logging anymore.
+  Also when in normal operation, commands can still be given. Note that the first minute alot is shown in the output but once in normal operation there is no much logging anymore.
   This can be changed by the L command. Again, the H command shows a help screen with all the commands.
 
   Note also that by default de arduino resets when the monitor is started (Ctrl Shift M)
   So you also loose all your variables :-(
-  This can be fixed with a condensator between the reset pin and gnd. I have used a 0.47 µF and this works fine.
+  This can be fixed with a condensator between the reset pin and gnd. I have used 0.47 µF and this works fine.
   However note that it must be disconnected when a new sketch is uploaded. Otherwise you get an error that it could not upload. I use a small switch to do that.
 
 */
+
+#include <Arduino.h>
 
 #define ClockModule                 // If defined then compile with the clock module code
 
@@ -126,7 +128,8 @@ int secondsTime = 0;                // set seconds at msTime
 void setup(void)
 {
   Serial.begin(9600);
-  Serial.println("Chicken hatch 24/10/2020. Original Copyright Techniek & Dier. Modified by peno");
+  Serial.setTimeout(60000);
+  Serial.println("Chicken hatch 12/11/2020. Copyright peno - Original Copyright Techniek & Dier");
 
 #if defined ClockModule
   hasClockModule = InitClock();
@@ -287,7 +290,7 @@ void Close(void)
     }
 
     SetLEDOff();
-    
+
     if (status == 0)
     {
       Serial.println("Door closed");
@@ -327,7 +330,7 @@ void Open(void)
     }
 
     SetLEDOff();
-    
+
     if (status == 0)
     {
       Serial.println("Door open");
@@ -459,7 +462,7 @@ void loop(void)
       if (++toggle > status * 2)
         toggle = 0;
       SetStatusLed(toggle % 2 != 0);
-      digitalWrite(ledClosedPin, LOW);
+      digitalWrite(ledClosedPin, toggle == status * 2 ? HIGH : LOW);
       digitalWrite(ledOpenedPin, toggle % 2 == 0 ? LOW : HIGH);
     }
 
@@ -657,7 +660,7 @@ void GetTime(unsigned long time, unsigned long timeNow, byte &year, byte &month,
       h1 -= 24;
       D1++;
     }
-    while (D1 > daysInMonth(Y1, M1))
+    while (D1 > (unsigned long)daysInMonth(Y1, M1))
     {
       D1 -= daysInMonth(Y1, M1);
       M1++;
@@ -810,7 +813,7 @@ bool Command()
 
     else if (answer.substring(0, 1) == "S") // reset status
     {
-      status = 0;
+      status = answer.substring(1).toInt();
     }
 
     else if (answer.substring(0, 1) == "R") // repeat
@@ -897,7 +900,7 @@ bool Command()
     {
       Serial.println("O: Open door");
       Serial.println("C: Close door");
-      Serial.println("S: Reset status to 0");
+      Serial.println("S(x): Reset status to x (default 0)");
       Serial.println("R<times>: Repeat openen and closing door");
       Serial.println("0: Leds off");
       Serial.println("1: Led open on");
