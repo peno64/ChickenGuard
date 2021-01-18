@@ -61,7 +61,7 @@
 #define ClockModule                 // If defined then compile with the clock module code
 
 const int ldrMorning = 600;         // light value for door to open
-const int ldrEvening = 35;          // light value for door to close
+const int ldrEvening = 40;          // light value for door to close
 
 const int nMeasures = 5;            // number of measures to do on which an average is made to determine if door is opened (avg >= ldrMorning) or closed (avg <= ldrEvening)
 const int measureEverySeconds = 60; // number of seconds between light measurements and descision if door should be closed or opened
@@ -87,6 +87,9 @@ bool isClosedByMotor;               // is door closed by motor
 uint16_t lightMeasures[nMeasures];  // array with light measurements (nMeasures measures taken every measureEverySeconds seconds). Contains the last nMeasures light measures
 int measureIndex = 0;               // position in lightMeasures for next measurement.
 
+uint16_t ldrMinimum = 9999;         // minimum ldr value
+uint16_t ldrMaximum = 0;            // maximum ldr value
+
 unsigned long msOpened = 0;         // millis() value of last door open
 unsigned long msClosed = 0;         // millis() value of last door close
 
@@ -103,6 +106,16 @@ byte hourClosed = 0;                // hour of last door close
 byte minuteClosed = 0;              // hour of last door close
 #endif
 
+#if !defined ClockModule
+unsigned long msTime = 0;           // millis() value of set time
+int dayTime = 0;                    // set day at msTime
+int monthTime = 0;                  // set month at msTime
+int yearTime = 0;                   // set year at msTime
+int hourTime = 0;                   // set hour at msTime
+int minuteTime = 0;                 // set minute at msTime
+int secondsTime = 0;                // set seconds at msTime
+#endif
+
 const byte dstDay = 1;              // day on which DST is changed. 1 = sunday
 const byte dstMinutes = 60;         // number of minutes on DST change
 
@@ -116,20 +129,12 @@ const byte winterHour = 3;          // hour that wintertime begins
 
 bool dstAdjust = true;              // Is there still a possible adjust today?
 
-unsigned long msTime = 0;           // millis() value of set time
-int dayTime = 0;                    // set day at msTime
-int monthTime = 0;                  // set month at msTime
-int yearTime = 0;                   // set year at msTime
-int hourTime = 0;                   // set hour at msTime
-int minuteTime = 0;                 // set minute at msTime
-int secondsTime = 0;                // set seconds at msTime
-
 // arduino function called when it starts or a reset is done
 void setup(void)
 {
   Serial.begin(9600);
   Serial.setTimeout(60000);
-  Serial.println("Chicken hatch 12/11/2020. Copyright peno - Original Copyright Techniek & Dier");
+  Serial.println("Chicken hatch 17/01/2021. Copyright peno");
 
 #if defined ClockModule
   hasClockModule = InitClock();
@@ -355,6 +360,10 @@ void LightMeasurement(bool init)
   {
     //do a light measure
     lightMeasures[measureIndex] = analogRead(ldrPin);
+    if (lightMeasures[measureIndex] > ldrMaximum)
+      ldrMaximum = lightMeasures[measureIndex];
+    if (lightMeasures[measureIndex] < ldrMinimum)
+      ldrMinimum = lightMeasures[measureIndex];
     measureIndex++;
     if (measureIndex >= nMeasures)
       measureIndex = 0;
@@ -400,7 +409,7 @@ int Process(bool mayOpen)
     Serial.println(data);
   }
 
-  else if (isClosedByMotor != isClosed)
+  else if (isClosed && !isClosedByMotor)
     // door is manually closed instead of automatically with the motor. Do nothing until manually opened again
     ;
 
@@ -567,6 +576,7 @@ void info(int measureEverySecond, bool dolog)
       ShowTime(&hourClosed, &minuteClosed, NULL);
 #endif
     }
+#if !defined ClockModule    
     else
     {
       unsigned long timeNow = millis();
@@ -580,6 +590,7 @@ void info(int measureEverySecond, bool dolog)
       Serial.print(", Time closed: ");
       ShowTime(msClosed, timeNow);
     }
+#endif
 
     Serial.println();
   }
@@ -618,14 +629,17 @@ void GetTime(byte &hour, byte &minute)
     readDS3231time(NULL, &minute, &hour, NULL, NULL, NULL, NULL);
 #endif
   }
+#if !defined ClockModule  
   else if (msTime != 0)
   {
     unsigned long timeNow = millis();
 
     GetTime(timeNow, timeNow, hour, minute);
   }
+#endif
 }
 
+#if !defined ClockModule
 void GetTime(unsigned long time, unsigned long timeNow, byte &hour, byte &minute)
 {
   byte year, month, day;
@@ -723,6 +737,7 @@ void ShowTime(unsigned long time, unsigned long timeNow)
       Serial.print("-");
   }
 }
+#endif
 
 String WaitForInput(String question)
 {
@@ -759,6 +774,7 @@ bool Command()
       logit = !logit;
     }
 
+#if !defined ClockModule
     else if (answer.substring(0, 2) == "AT") // current date/time arduino: dd/mm/yy hh:mm:ss
     {
       int day = answer.substring(2, 4).toInt();
@@ -779,6 +795,7 @@ bool Command()
         msTime = millis();
       }
     }
+#endif
 
 #if defined ClockModule
     else if (answer.substring(0, 2) == "CT") // current date/time clock module: dd/mm/yy hh:mm:ss
@@ -869,6 +886,12 @@ bool Command()
       Serial.print(minimum);
       Serial.print(", Maximum: ");
       Serial.println(maximum);
+
+      Serial.print("@ Minimum: ");
+      Serial.print(ldrMinimum);
+      Serial.print(", Maximum: ");
+      Serial.println(ldrMaximum);
+      
       if (logit)
         WaitForInput("Press enter to continue");
     }
@@ -908,7 +931,9 @@ bool Command()
       Serial.println("3: Led open and closed on");
       Serial.println("I: Info");
       Serial.println("L: Log toggle");
+#if !defined ClockModule
       Serial.println("AT<dd/mm/yy hh:mm:ss>: set arduino timer date/time");
+#endif      
 #if defined ClockModule
       Serial.println("CT<dd/mm/yy hh:mm:ss>: Set clockmodule date/time");
 #endif
@@ -956,10 +981,12 @@ void DSTCorrection()
   else
 #endif
   {
+#if !defined ClockModule    
     unsigned long timeNow = millis();
 
     GetTime(timeNow, timeNow, year, month, dayOfMonth, hour, minute);
     dayOfWeek = dayofweek(2000 + year, month, dayOfMonth) + 1;
+#endif    
   }
 
   if (dayOfWeek != dstDay)
@@ -1012,6 +1039,7 @@ void DSTCorrection()
         else
 #endif
         {
+#if !defined ClockModule          
           minuteTime += adjustMinutes % 60;
           while (minuteTime >= 60)
           {
@@ -1019,6 +1047,7 @@ void DSTCorrection()
             minuteTime -= 60;
           }
           hourTime += adjustMinutes / 60;
+#endif          
         }
         dstAdjust = false;
       }
