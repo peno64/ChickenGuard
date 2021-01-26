@@ -101,6 +101,7 @@ bool hasClockModule = false;        // Is the clock module detected
 #if defined ClockModule
 byte hourOpened = 0;                // hour of last door open
 byte minuteOpened = 0;              // minute of last door open
+byte secondOpened = 0;              // second of last door open
 
 byte hourClosed = 0;                // hour of last door close
 byte minuteClosed = 0;              // hour of last door close
@@ -219,7 +220,7 @@ void MotorOpen(void)
   msOpened = millis();
 #if defined ClockModule
   if (hasClockModule)
-    readDS3231time(NULL, &minuteOpened, &hourOpened, NULL, NULL, NULL, NULL);
+    readDS3231time(&secondOpened, &minuteOpened, &hourOpened, NULL, NULL, NULL, NULL);
 #endif
 }
 
@@ -401,12 +402,27 @@ int Process(bool mayOpen)
 
   bool isClosed = IsClosed();
 
+  static byte hourOpened2 = 0;                // hour of last door open
+  static byte minuteOpened2 = 0;              // minute of last door open
+  static byte secondOpened2 = 0;              // second of last door open
+
+  if (isClosed)
+    hourOpened2 = minuteOpened2 = secondOpened2 = 0;
+  else if (hourOpened2 == 0 && minuteOpened2 == 0 && secondOpened2 == 0)
+    readDS3231time(&secondOpened2, &minuteOpened2, &hourOpened2, NULL, NULL, NULL, NULL);
+
   if (status != 0)
   {
     char data[100];
 
     sprintf(data, "Something is not ok (%d - %s); idle", status, status == 1 ? "door not open" : status == 2 ? "door not closed after timeout" : "door not closed after 10 tries to tighten");
     Serial.println(data);
+    Serial.print(" Time open: ");
+    ShowTime(&hourOpened, &minuteOpened, &secondOpened);
+    Serial.println();
+    Serial.print(" Time actually open: ");
+    ShowTime(&hourOpened2, &minuteOpened2, &secondOpened2);
+    Serial.println();
   }
 
   else if (isClosed && !isClosedByMotor)
