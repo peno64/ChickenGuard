@@ -26,7 +26,13 @@
   Opening the door again can then be done during light or dark.
   In dark, the door will then close again via the motor and when light the door will stay open until it becomes dark.
 
+  At the light detector there is also a 3-way switch where in normal mode the ldr is connected.
+  A second mode is where the ldr is disconnected resulting in an input value of 0 and this results in an immediate close of the door.
+  A third mode is where the ldr is connected to +5 resulting in a maximum input value and this results in an immediate open of the door.
+  
   If there is an error, the red led will blink as many times as the error status, then once green, then once off and then repeat this.
+
+  This error can be reset by switching the switch between immediate close and open within 5 seconds.
 
   When power is switched on, the first minute nothing will happen and the system waits for commands you can enter.
   Each time a command is given, the minute starts again. There are commands to manually open and close the door, doing this repeatingly, ... H gives a help screen.
@@ -62,6 +68,9 @@
 
 const int ldrMorning = 600;         // light value for door to open
 const int ldrEvening = 40;          // light value for door to close
+
+const int ldrOpenNow = 1020;        // light value for door open now
+const int ldrCloseNow = 0;          // light value for door close now
 
 const int nMeasures = 5;            // number of measures to do on which an average is made to determine if door is opened (avg >= ldrMorning) or closed (avg <= ldrEvening)
 const int measureEverySeconds = 60; // number of seconds between light measurements and descision if door should be closed or opened
@@ -116,6 +125,9 @@ int hourTime = 0;                   // set hour at msTime
 int minuteTime = 0;                 // set minute at msTime
 int secondsTime = 0;                // set seconds at msTime
 #endif
+
+unsigned long timePrevReset = 0;    // time when a previous open now or close now was done
+bool openPrevReset;
 
 const byte dstDay = 1;              // day on which DST is changed. 1 = sunday
 const byte dstMinutes = 60;         // number of minutes on DST change
@@ -353,14 +365,27 @@ void LightMeasurement(bool init)
 {
   int counter;
 
+  uint16_t ldr = analogRead(ldrPin);
+
   if (init)
     counter = nMeasures;
   else
+  {
     counter = 1;
+    
+    if (ldr > ldrCloseNow && ldr < ldrOpenNow)
+    {
+      int i;
+      for (i = 1; i < nMeasures && lightMeasures[i] == lightMeasures[0]; i++);
+      if (i >= nMeasures && (lightMeasures[0] <= ldrCloseNow || lightMeasures[0] >= ldrOpenNow))  
+        counter = nMeasures;
+    }
+  }
+  
   for (; counter >= 1; counter--)
   {
     //do a light measure
-    lightMeasures[measureIndex] = analogRead(ldrPin);
+    lightMeasures[measureIndex] = ldr;
     if (lightMeasures[measureIndex] > ldrMaximum)
       ldrMaximum = lightMeasures[measureIndex];
     if (lightMeasures[measureIndex] < ldrMinimum)
@@ -391,6 +416,27 @@ void LightCalculation(uint16_t &average, uint16_t &minimum, uint16_t &maximum)
   average /= nMeasures;
 }
 
+void checkReset(bool open)
+{
+  unsigned long timeNow = millis();
+  if (timeNow == 0)
+    timeNow++;
+
+  if (timePrevReset != 0 && 
+      open != openPrevReset && 
+      timeNow - timePrevReset < 5000)
+  {
+    isClosedByMotor = IsClosed();
+    status = 0;
+  }
+
+  if (open != openPrevReset || timePrevReset == 0)
+  {
+    openPrevReset = open;
+    timePrevReset = timeNow;
+  }
+}
+
 // check if door must be opened or closed and do it if needed
 int Process(bool mayOpen)
 {
@@ -398,6 +444,24 @@ int Process(bool mayOpen)
 
   LightCalculation(average, minimum, maximum);
 
+  int ldr = analogRead(ldrPin);
+  if (ldr <= ldrCloseNow)
+  {
+    checkReset(false);
+    
+    average = 0;
+    LightMeasurement(true); // fill the whole light measurement array with the current light value
+  }
+  else if (ldr >= ldrOpenNow)
+  {
+    checkReset(true);
+    
+    average = ldrOpenNow;
+    LightMeasurement(true); // fill the whole light measurement array with the current light value
+  }
+  else
+    timePrevReset = 0;
+  
   int ret = 0;
 
   bool isClosed = IsClosed();
@@ -437,7 +501,7 @@ int Process(bool mayOpen)
   }
 
   // If the average is greater than ldrMorning and the door may open and it is closed and it may open by time then open it
-  else if (average >= ldrMorning && mayOpen && isClosed && MayOpen(0))
+  else if (average >= ldrMorning && isClosed && (average == ldrOpenNow || (mayOpen && MayOpen(0))))
   {
     Open();
     ret = motorOpenPin;
