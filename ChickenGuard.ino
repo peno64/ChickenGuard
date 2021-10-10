@@ -147,7 +147,7 @@ void setup(void)
 {
   Serial.begin(9600);
   Serial.setTimeout(60000);
-  Serial.println("Chicken hatch 17/01/2021. Copyright peno");
+  Serial.println("Chicken hatch 28/03/2021. Copyright peno");
 
 #if defined ClockModule
   hasClockModule = InitClock();
@@ -466,6 +466,7 @@ int Process(bool mayOpen)
 
   bool isClosed = IsClosed();
 
+#if defined ClockModule
   static byte hourOpened2 = 0;                // hour of last door open
   static byte minuteOpened2 = 0;              // minute of last door open
   static byte secondOpened2 = 0;              // second of last door open
@@ -474,6 +475,7 @@ int Process(bool mayOpen)
     hourOpened2 = minuteOpened2 = secondOpened2 = 0;
   else if (hourOpened2 == 0 && minuteOpened2 == 0 && secondOpened2 == 0)
     readDS3231time(&secondOpened2, &minuteOpened2, &hourOpened2, NULL, NULL, NULL, NULL);
+#endif
 
   if (status != 0)
   {
@@ -481,12 +483,14 @@ int Process(bool mayOpen)
 
     sprintf(data, "Something is not ok (%d - %s); idle", status, status == 1 ? "door not open" : status == 2 ? "door not closed after timeout" : "door not closed after 10 tries to tighten");
     Serial.println(data);
+#if defined ClockModule
     Serial.print(" Time open: ");
     ShowTime(&hourOpened, &minuteOpened, &secondOpened);
     Serial.println();
     Serial.print(" Time actually open: ");
     ShowTime(&hourOpened2, &minuteOpened2, &secondOpened2);
     Serial.println();
+#endif    
   }
 
   else if (isClosed && !isClosedByMotor)
@@ -722,12 +726,12 @@ void GetTime(byte &hour, byte &minute)
 #if !defined ClockModule
 void GetTime(unsigned long time, unsigned long timeNow, byte &hour, byte &minute)
 {
-  byte year, month, day;
+  byte year, month, day, second;
 
-  GetTime(time, timeNow, year, month, day, hour, minute);
+  GetTime(time, timeNow, year, month, day, hour, minute, second);
 }
 
-void GetTime(unsigned long time, unsigned long timeNow, byte &year, byte &month, byte &day, byte &hour, byte &minute)
+void GetTime(unsigned long time, unsigned long timeNow, byte &year, byte &month, byte &day, byte &hour, byte &minute, byte &second)
 {
   if (msTime != 0 && time >= msTime)
   {
@@ -738,12 +742,20 @@ void GetTime(unsigned long time, unsigned long timeNow, byte &year, byte &month,
     unsigned long hours = ms / 1000 / 60 / 60;
     ms -= hours * 60 * 60 * 1000;
     unsigned long minutes = ms / 1000 / 60;
+    ms -= minutes * 60 * 1000;
+    unsigned long seconds = ms / 1000;
 
     unsigned long D1 = dayTime + days;
     unsigned long M1 = monthTime;
     unsigned long Y1 = yearTime;
     unsigned long h1 = hourTime + hours;
     unsigned long m1 = minuteTime + minutes;
+    unsigned long s1 = secondsTime + seconds;
+    while (s1 >= 60)
+    {
+      m1++;
+      s1 -= 60;
+    }
     while (m1 >= 60)
     {
       h1++;
@@ -770,9 +782,10 @@ void GetTime(unsigned long time, unsigned long timeNow, byte &year, byte &month,
     day = (byte)D1;
     hour = (byte)h1;
     minute = (byte)m1;
+    second = (byte)s1;
   }
   else
-    year = month = day = hour = minute = 0;
+    year = month = day = hour = minute = second = 0;
 }
 
 void ShowTime(unsigned long time, unsigned long timeNow)
@@ -854,43 +867,72 @@ bool Command()
       logit = !logit;
     }
 
-#if !defined ClockModule
     else if (answer.substring(0, 2) == "AT") // current date/time arduino: dd/mm/yy hh:mm:ss
     {
-      int day = answer.substring(2, 4).toInt();
-      int month = answer.substring(5, 7).toInt();
-      int year = answer.substring(8, 10).toInt();
-
-      int hour = answer.substring(11, 13).toInt();
-      int minute = answer.substring(14, 16).toInt();
-      int sec = answer.substring(17, 19).toInt();
-      if (day != 0 && month != 0 && year != 0)
-      {
-        dayTime = day;
-        monthTime = month;
-        yearTime = year;
-        hourTime = hour;
-        minuteTime = minute;
-        secondsTime = sec;
-        msTime = millis();
+#if !defined ClockModule
+      if (answer[2])
+      {      
+        int day = answer.substring(2, 4).toInt();
+        int month = answer.substring(5, 7).toInt();
+        int year = answer.substring(8, 10).toInt();
+  
+        int hour = answer.substring(11, 13).toInt();
+        int minute = answer.substring(14, 16).toInt();
+        int sec = answer.substring(17, 19).toInt();
+        if (day != 0 && month != 0 && year != 0)
+        {
+          dayTime = day;
+          monthTime = month;
+          yearTime = year;
+          hourTime = hour;
+          minuteTime = minute;
+          secondsTime = sec;
+          msTime = millis();
+        }
       }
-    }
-#endif
 
-#if defined ClockModule
+      byte second, minute, hour, dayOfMonth, month, year;
+      char data[30];
+      unsigned long timeNow = millis();
+      
+      GetTime(timeNow, timeNow, year, month, dayOfMonth, hour, minute, second);
+
+      sprintf(data, "%02d/%02d/%02d %02d:%02d:%02d", (int)dayOfMonth,  (int)month, (int)year, (int)hour, (int)minute, (int)second);
+      Serial.println(data);
+
+      if (logit)
+        WaitForInput("Press enter to continue");
+#endif
+    }
+
     else if (answer.substring(0, 2) == "CT") // current date/time clock module: dd/mm/yy hh:mm:ss
     {
-      int day = answer.substring(2, 4).toInt();
-      int month = answer.substring(5, 7).toInt();
-      int year = answer.substring(8, 10).toInt();
+#if defined ClockModule
+      if (answer[2])
+      {
+        int day = answer.substring(2, 4).toInt();
+        int month = answer.substring(5, 7).toInt();
+        int year = answer.substring(8, 10).toInt();
+  
+        int hour = answer.substring(11, 13).toInt();
+        int minute = answer.substring(14, 16).toInt();
+        int sec = answer.substring(17, 19).toInt();
+        if (day != 0 && month != 0 && year != 0)
+          setDS3231time(sec, minute, hour, 0, day, month, year);
+      }
+  
+      byte second, minute, hour, dayOfWeek, dayOfMonth, month, year;
+      char data[30];
+      
+      readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
 
-      int hour = answer.substring(11, 13).toInt();
-      int minute = answer.substring(14, 16).toInt();
-      int sec = answer.substring(17, 19).toInt();
-      if (day != 0 && month != 0 && year != 0)
-        setDS3231time(sec, minute, hour, 0, day, month, year);
-    }
+      sprintf(data, "%02d/%02d/%02d %02d:%02d:%02d", (int)dayOfMonth,  (int)month, (int)year, (int)hour, (int)minute, (int)second);
+      Serial.println(data);
+
+      if (logit)
+        WaitForInput("Press enter to continue");
 #endif
+    }
 
     else if (answer.substring(0, 1) == "O") // open
     {
@@ -931,17 +973,17 @@ bool Command()
         WaitForInput("Press enter to continue");
     }
 
-#if defined ClockModule
     if (answer.substring(0, 1) == "T") // temperature
     {
+#if defined ClockModule
       Serial.print("Temperature: ");
       Serial.print(readTemperature());
       Serial.println("°C");
 
       if (logit)
         WaitForInput("Press enter to continue");
-    }
 #endif
+    }
 
     else if (answer.substring(0, 1) == "I") // info
     {
@@ -1064,7 +1106,7 @@ void DSTCorrection()
 #if !defined ClockModule    
     unsigned long timeNow = millis();
 
-    GetTime(timeNow, timeNow, year, month, dayOfMonth, hour, minute);
+    GetTime(timeNow, timeNow, year, month, dayOfMonth, hour, minute, second);
     dayOfWeek = dayofweek(2000 + year, month, dayOfMonth) + 1;
 #endif    
   }
