@@ -82,10 +82,10 @@ const int ledOpenedPin = 7;         // red LED - door open  D7
 const int magnetPin = A1;           // magnet switch  A1
 const int ldrPin = A2;              // LDR (light sensor) A2
 
-const int openMilliseconds = 1300;  // number of milliseconds to open door
+const int openMilliseconds = 1100;  // number of milliseconds to open door
 const int closeMilliseconds = 3000; // maximal number of milliseconds to close door
-const int closeWaitTime1 = 1000;    // after this much milliseconds, stop closing door ...
-const int closeWaitTime2 = 1000;    // ... for this much of milliseconds and then continue closing the door
+const int closeWaitTime1 = 1400;    // after this much milliseconds, stop closing door ...
+const int closeWaitTime2 = 2000;    // ... for this much of milliseconds and then continue closing the door
 
 const unsigned long waitForInputMaxMs = 900000; // maximum wait time for input (900000 ms = 15 min)
 
