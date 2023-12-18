@@ -51,6 +51,6 @@ This can be changed by the L command. Again, the H command shows a help screen w
 
 Note also that by default de arduino resets when the monitor is started (Ctrl Shift M)
 So you also loose all your variables :-(
-This can be fixed with a condensator between the reset pin and gnd. I have used a 0.47 µF and this works fine.
+This can be fixed with a condensator between the reset pin and gnd. I have used a 0.47 ï¿½F and this works fine.
 However note that it must be disconnected when a new sketch is uploaded. Otherwise you get an error that it could not upload. I use a small switch to do that.
 

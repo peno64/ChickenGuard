@@ -66,6 +66,7 @@
 #include <Arduino.h>
 
 #define ClockModule                 // If defined then compile with the clock module code
+#define MQTTModule                  // If defined then compile with MQTT support - can be used via Home Assistant
 
 const int ldrMorning = 600;         // light value for door to open
 const int ldrEvening = 40;          // light value for door to close
@@ -77,9 +78,9 @@ const int nMeasures = 5;            // number of measures to do on which an aver
 const int measureEverySeconds = 60; // number of seconds between light measurements and descision if door should be closed or opened
 const int motorClosePin = 4;        // motor turns one way to close the door
 const int motorOpenPin = 5;         // motor turns other way to open the door
-const int ledClosedPin = 9;         // green LED - door closed  D9
+const int ledClosedPin = 6;         // green LED - door closed  D6
 const int ledOpenedPin = 7;         // red LED - door open  D7
-const int magnetPin = A1;           // magnet switch  A1
+const int magnetPin = 3;            // magnet switch  D3
 const int ldrPin = A2;              // LDR (light sensor) A2
 
 const int openMilliseconds = 1100;  // number of milliseconds to open door
@@ -104,7 +105,7 @@ unsigned long msOpened = 0;         // millis() value of last door open
 unsigned long msClosed = 0;         // millis() value of last door close
 
 const byte startHourOpen = 7;       // minimum hour that door may open
-const byte startMinuteOpen = 0;     // minimum minute that door may close
+const byte startMinuteOpen = 0;     // minimum minute that door may open
 
 bool hasClockModule = false;        // Is the clock module detected
 
@@ -143,12 +144,15 @@ const byte winterHour = 3;          // hour that wintertime begins
 
 bool dstAdjust = true;              // Is there still a possible adjust today?
 
+unsigned long StartTime;
+int measureEverySecond;
+
 // arduino function called when it starts or a reset is done
 void setup(void)
 {
   Serial.begin(9600);
   Serial.setTimeout(60000);
-  Serial.println("Chicken hatch 28/03/2021. Copyright peno");
+  Serial.println("Chicken hatch 17/12/2023. Copyright peno");
 
 #if defined ClockModule
   hasClockModule = InitClock();
@@ -169,6 +173,17 @@ void setup(void)
   pinMode(ledOpenedPin, OUTPUT);
   pinMode(ledClosedPin, OUTPUT);
 
+# if defined MQTTModule
+    Serial.println("MQTT enabled");
+    setupMQTT();
+
+    loopMQTT();
+    setMQTTDoorStatus("Setup");
+    loopMQTT();
+#else
+    Serial.println("MQTT not enabled");
+# endif
+
   SetLEDOff();
 
   SetStatusLed(false);
@@ -184,7 +199,11 @@ void setup(void)
   // First 60 seconds chance to enter commands
   for (int i = 60; i > 0; i--)
   {
+    loopMQTT();
+
     info(i, logit);
+
+    setMQTTTime();
 
     if (Command())
       i = 60; // When a command was given then wait again 60 seconds
@@ -201,6 +220,9 @@ void setup(void)
   LightMeasurement(true); // fill the whole light measurement array with the current light value
 
   Process(true); // opens the door if light and lets it closed if dark
+
+  measureEverySecond = measureEverySeconds + 1;
+  StartTime = millis();
 }
 
 void SetStatusLed(bool on)
@@ -398,8 +420,10 @@ void LightMeasurement(bool init)
 }
 
 // Calculation on light measurements
-void LightCalculation(uint16_t &average, uint16_t &minimum, uint16_t &maximum)
+void LightCalculation(uint16_t &average, uint16_t &minimum, uint16_t &maximum, bool ahead = false)
 {
+  uint16_t ldr;
+
   // calculate the average of the array and the minimal and maximum value
   average = 0;
   minimum = ~0;
@@ -407,11 +431,16 @@ void LightCalculation(uint16_t &average, uint16_t &minimum, uint16_t &maximum)
 
   for (int counter = nMeasures - 1; counter >= 0; counter--)
   {
-    average += lightMeasures[counter];
-    if (lightMeasures[counter] > maximum)
-      maximum = lightMeasures[counter];
-    if (lightMeasures[counter] < minimum)
-      minimum = lightMeasures[counter];
+    if (!ahead || counter != measureIndex)
+      ldr = lightMeasures[counter];
+    else
+      ldr = analogRead(ldrPin);
+
+    average += ldr;
+    if (ldr > maximum)
+      maximum = ldr;
+    if (ldr < minimum)
+      minimum = ldr;
   }
 
   average /= nMeasures;
@@ -444,8 +473,11 @@ int Process(bool mayOpen)
   uint16_t average, minimum, maximum;
 
   LightCalculation(average, minimum, maximum);
+  setMQTTLDRavg((int)average);
+  setMQTTTemperature();
 
   int ldr = analogRead(ldrPin);
+  setMQTTLDR(ldr);
   if (ldr <= ldrCloseNow)
   {
     checkReset(false);
@@ -478,11 +510,13 @@ int Process(bool mayOpen)
     readDS3231time(&secondOpened2, &minuteOpened2, &hourOpened2, NULL, NULL, NULL, NULL);
 #endif
 
+  char *ptr = status == 0 ? isClosed ? "Door closed" : "Door open" : status == 1 ? "Door should be open but is still closed" : status == 2 ? "Door not closed after timeout" : "Door not closed after 10 tries to tighten";;
+
   if (status != 0)
   {
     char data[100];
-
-    sprintf(data, "Something is not ok (%d - %s); idle", status, status == 1 ? "door not open" : status == 2 ? "door not closed after timeout" : "door not closed after 10 tries to tighten");
+    
+    sprintf(data, "Something is not ok (%d - %s); idle", status, ptr);
     Serial.println(data);
 #if defined ClockModule
     Serial.print(" Time open: ");
@@ -520,6 +554,14 @@ int Process(bool mayOpen)
   else if (maximum >= ldrMorning && isClosed && MayOpen(-nMeasures / 2))
     ret = ledOpenedPin;
 
+  if (ret == ledOpenedPin)
+    ptr = "Door closed, about time to open it";
+  else if (ret == ledClosedPin)
+    ptr = "Door open, about time to close it";
+
+  setMQTTDoorStatus(ptr);
+  setMQTTTime();
+
   return ret;
 }
 
@@ -543,47 +585,55 @@ bool MayOpen(int deltaMinutes)
 // arduino loop, execute every measureEverySeconds seconds
 void loop(void)
 {
-  for (int measureEverySecond = measureEverySeconds; measureEverySecond > 0; measureEverySecond--)
+  loopMQTT();
+
+  unsigned long CurrentTime = millis();
+  if (CurrentTime - StartTime >= 1000)
   {
-    // every second
-    delay(1000);
-
-    int ret = Process(false);
-
-    if (status != 0)
+    StartTime = CurrentTime;
+    if (--measureEverySecond > 0)
     {
-      // Oops something is wrong. Blink the red led as many times as the error code and then 2 seconds off and then start again
-      if (++toggle > status * 2)
-        toggle = 0;
-      SetStatusLed(toggle % 2 != 0);
-      digitalWrite(ledClosedPin, toggle == status * 2 ? HIGH : LOW);
-      digitalWrite(ledOpenedPin, toggle % 2 == 0 ? LOW : HIGH);
+      int ret = Process(false);
+
+      if (status != 0)
+      {
+        // Oops something is wrong. Blink the red led as many times as the error code and then 2 seconds off and then start again
+        if (++toggle > status * 2)
+          toggle = 0;
+        SetStatusLed(toggle % 2 != 0);
+        digitalWrite(ledClosedPin, toggle == status * 2 ? HIGH : LOW);
+        digitalWrite(ledOpenedPin, toggle % 2 == 0 ? LOW : HIGH);
+      }
+
+      else if (ret == ledClosedPin || ret == ledOpenedPin)
+      {
+        // The door is about to close or open
+        // Blink the corresponding led every second
+        if (++toggle > 1)
+          toggle = 0;
+
+        digitalWrite(ret, toggle == 0 ? LOW : HIGH);
+        digitalWrite(ret == ledClosedPin ? ledOpenedPin : ledClosedPin, LOW);
+      }
+
+      else
+        SetLEDOpenClosed();
+
+      info(measureEverySecond, logit);
+
+      Command();
     }
-
-    else if (ret == ledClosedPin || ret == ledOpenedPin)
-    {
-      // The door is about to close or open
-      // Blink the corresponding led every second
-      if (++toggle > 1)
-        toggle = 0;
-
-      digitalWrite(ret, toggle == 0 ? LOW : HIGH);
-      digitalWrite(ret == ledClosedPin ? ledOpenedPin : ledClosedPin, LOW);
-    }
-
     else
-      SetLEDOpenClosed();
+    {
+      DSTCorrection();
 
-    info(measureEverySecond, logit);
+      LightMeasurement(false);
 
-    Command();
+      Process(isClosedByMotor == IsClosed()); // If the door is manually closed then don't try to open
+
+      measureEverySecond = measureEverySeconds + 1;
+    }
   }
-
-  DSTCorrection();
-
-  LightMeasurement(false);
-
-  Process(isClosedByMotor == IsClosed()); // If the door is manually closed then don't try to open
 }
 
 void SetLEDOff()
@@ -606,100 +656,84 @@ void SetLEDOpenClosed()
   }
 }
 
+void info(int measureEverySecond, char *buf)
+{
+  if (measureEverySecond != 0)
+    sprintf(buf + strlen(buf), "%d: ", measureEverySecond);
+
+  uint16_t average, minimum, maximum;
+
+  LightCalculation(average, minimum, maximum);
+  sprintf(buf + strlen(buf), "LDR: %d, ~: %d", analogRead(ldrPin), average);
+
+  LightCalculation(average, minimum, maximum, true);
+  sprintf(buf + strlen(buf), ", ~~: %d, Door is %s (%s), Open LDR: %d, Close LDR: %d, Status: %d", average, IsClosed() ? "closed" : "open", isClosedByMotor ? "closed" : "open", ldrMorning, ldrEvening, status);
+
+  if (hasClockModule)
+  {
+#if defined ClockModule
+    byte second, minute, hour;
+    // retrieve data from DS3231
+    readDS3231time(&second, &minute, &hour, NULL, NULL, NULL, NULL);
+    strcat(buf, ", Time now: ");
+    ShowTime(&hour, &minute, &second, buf + strlen(buf));
+
+    strcat(buf, ", Time open: ");
+    ShowTime(&hourOpened, &minuteOpened, NULL, buf + strlen(buf));
+
+    strcat(buf, ", Time closed: ");
+    ShowTime(&hourClosed, &minuteClosed, NULL, buf + strlen(buf));
+#endif
+  }
+#if !defined ClockModule    
+  else
+  {
+    unsigned long timeNow = millis();
+
+    strcat(buf, ", Time now: ");
+    ShowTime(timeNow, timeNow, NULL, buf + strlen(buf));
+
+    strcat(buf, ", Time open: ");
+    ShowTime(msOpened, timeNow, NULL, buf + strlen(buf));
+
+    strcat(buf, ", Time closed: ");
+    ShowTime(msClosed, timeNow, NULL, buf + strlen(buf));
+  }
+#endif
+}
+
 void info(int measureEverySecond, bool dolog)
 {
   if (dolog)
   {
-    if (measureEverySecond != 0)
-    {
-      Serial.print(measureEverySecond);
-      Serial.print(": ");
-    }
+    char buf[255] = { 0 };
 
-    Serial.print("LDR: ");
-    Serial.print(analogRead(ldrPin));
+    info(measureEverySecond, (char *) buf);
 
-    uint16_t average, minimum, maximum;
-
-    LightCalculation(average, minimum, maximum);
-    Serial.print(", ~: ");
-    Serial.print(average);
-
-    Serial.print(", Door is ");
-    if (IsClosed())
-      Serial.print("closed");
-    else
-      Serial.print("open");
-
-    if (isClosedByMotor)
-      Serial.print(" (closed)");
-    else
-      Serial.print(" (open)");
-
-    Serial.print(", Open LDR: ");
-    Serial.print(ldrMorning);
-
-    Serial.print(", Close LDR: ");
-    Serial.print(ldrEvening);
-
-    Serial.print(", Status: ");
-    Serial.print(status);
-
-    if (hasClockModule)
-    {
-#if defined ClockModule
-      byte second, minute, hour;
-      // retrieve data from DS3231
-      readDS3231time(&second, &minute, &hour, NULL, NULL, NULL, NULL);
-      Serial.print(", Time now: ");
-      ShowTime(&hour, &minute, &second);
-
-      Serial.print(", Time open: ");
-      ShowTime(&hourOpened, &minuteOpened, NULL);
-
-      Serial.print(", Time closed: ");
-      ShowTime(&hourClosed, &minuteClosed, NULL);
-#endif
-    }
-#if !defined ClockModule    
-    else
-    {
-      unsigned long timeNow = millis();
-
-      Serial.print(", Time now: ");
-      ShowTime(timeNow, timeNow);
-
-      Serial.print(", Time open: ");
-      ShowTime(msOpened, timeNow);
-
-      Serial.print(", Time closed: ");
-      ShowTime(msClosed, timeNow);
-    }
-#endif
-
-    Serial.println();
+    Serial.println(buf);
+    setMQTTMonitor(buf);
   }
 }
 
 #if defined ClockModule
+void ShowTime(byte *hour, byte *minute, byte *second, char *buf)
+{
+  char *buffer[10];
+  
+  if (buf == NULL)
+    buf = (char *)buffer;
+
+  sprintf(buf, "%d:%02d", *hour, *minute);
+  if (second != NULL)
+    sprintf(buf + strlen(buf), ":%02d", *second);
+
+  if (buf == buffer)
+    Serial.print(buf);
+}
+
 void ShowTime(byte *hour, byte *minute, byte *second)
 {
-  Serial.print(*hour, DEC);
-  Serial.print(":");
-  if (*minute < 10)
-  {
-    Serial.print("0");
-  }
-  Serial.print(*minute, DEC);
-  if (second != NULL)
-  {
-    Serial.print(":");
-    if (*second < 10)
-    {
-      Serial.print("0");
-    }
-    Serial.print(*second, DEC);
-  }
+  ShowTime(hour, minute, second, NULL);
 }
 #endif
 
@@ -859,220 +893,225 @@ bool Command()
     String answer;
 
     answer = WaitForInput("");
-    answer.toUpperCase();
-    Serial.print("Received: ");
-    Serial.println(answer);
 
-    if (answer.substring(0, 1) == "L") // log toggle
-    {
-      logit = !logit;
-    }
-
-    else if (answer.substring(0, 2) == "AT") // current date/time arduino: dd/mm/yy hh:mm:ss
-    {
-#if !defined ClockModule
-      if (answer[2])
-      {      
-        int day = answer.substring(2, 4).toInt();
-        int month = answer.substring(5, 7).toInt();
-        int year = answer.substring(8, 10).toInt();
-  
-        int hour = answer.substring(11, 13).toInt();
-        int minute = answer.substring(14, 16).toInt();
-        int sec = answer.substring(17, 19).toInt();
-        if (day != 0 && month != 0 && year != 0)
-        {
-          dayTime = day;
-          monthTime = month;
-          yearTime = year;
-          hourTime = hour;
-          minuteTime = minute;
-          secondsTime = sec;
-          msTime = millis();
-        }
-      }
-
-      byte second, minute, hour, dayOfMonth, month, year;
-      char data[30];
-      unsigned long timeNow = millis();
-      
-      GetTime(timeNow, timeNow, year, month, dayOfMonth, hour, minute, second);
-
-      sprintf(data, "%02d/%02d/%02d %02d:%02d:%02d", (int)dayOfMonth,  (int)month, (int)year, (int)hour, (int)minute, (int)second);
-      Serial.println(data);
-
-      if (logit)
-        WaitForInput("Press enter to continue");
-#endif
-    }
-
-    else if (answer.substring(0, 2) == "CT") // current date/time clock module: dd/mm/yy hh:mm:ss
-    {
-#if defined ClockModule
-      if (answer[2])
-      {
-        int day = answer.substring(2, 4).toInt();
-        int month = answer.substring(5, 7).toInt();
-        int year = answer.substring(8, 10).toInt();
-  
-        int hour = answer.substring(11, 13).toInt();
-        int minute = answer.substring(14, 16).toInt();
-        int sec = answer.substring(17, 19).toInt();
-        if (day != 0 && month != 0 && year != 0)
-          setDS3231time(sec, minute, hour, 0, day, month, year);
-      }
-  
-      byte second, minute, hour, dayOfWeek, dayOfMonth, month, year;
-      char data[30];
-      
-      readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
-
-      sprintf(data, "%02d/%02d/%02d %02d:%02d:%02d", (int)dayOfMonth,  (int)month, (int)year, (int)hour, (int)minute, (int)second);
-      Serial.println(data);
-
-      if (logit)
-        WaitForInput("Press enter to continue");
-#endif
-    }
-
-    else if (answer.substring(0, 1) == "O") // open
-    {
-      Open();
-
-      if (logit)
-        WaitForInput("Press enter to continue");
-    }
-
-    else if (answer.substring(0, 1) == "C") // close
-    {
-      Close();
-
-      if (logit)
-        WaitForInput("Press enter to continue");
-    }
-
-    else if (answer.substring(0, 1) == "S") // reset status
-    {
-      status = answer.substring(1).toInt();
-    }
-
-    else if (answer.substring(0, 1) == "R") // repeat
-    {
-      int x = answer.substring(1).toInt();
-
-      for (int i = 0; i < x; i++)
-      {
-        Close();
-
-        delay(5000);
-
-        Open();
-
-        delay(5000);
-      }
-      if (logit)
-        WaitForInput("Press enter to continue");
-    }
-
-    if (answer.substring(0, 1) == "T") // temperature
-    {
-#if defined ClockModule
-      Serial.print("Temperature: ");
-      Serial.print(readTemperature());
-      Serial.println("°C");
-
-      if (logit)
-        WaitForInput("Press enter to continue");
-#endif
-    }
-
-    else if (answer.substring(0, 1) == "I") // info
-    {
-      info(0, true);
-
-      Serial.print("Measurements:");
-      int measureIndex0 = measureIndex;
-      for (int counter = nMeasures - 1; counter >= 0; counter--)
-      {
-        measureIndex0 = (measureIndex0 > 0 ? measureIndex0 : nMeasures) - 1;
-        Serial.print(" ");
-        Serial.print(lightMeasures[measureIndex0]);
-      }
-      Serial.println();
-
-      uint16_t average, minimum, maximum;
-      LightCalculation(average, minimum, maximum);
-
-      Serial.print("Average: ");
-      Serial.print(average);
-      Serial.print(", Minimum: ");
-      Serial.print(minimum);
-      Serial.print(", Maximum: ");
-      Serial.println(maximum);
-
-      Serial.print("@ Minimum: ");
-      Serial.print(ldrMinimum);
-      Serial.print(", Maximum: ");
-      Serial.println(ldrMaximum);
-      
-      if (logit)
-        WaitForInput("Press enter to continue");
-    }
-
-    else if (answer.substring(0, 1) == "0")
-    {
-      SetLEDOff();
-    }
-
-    else if (answer.substring(0, 1) == "1")
-    {
-      digitalWrite(ledOpenedPin, HIGH);
-      digitalWrite(ledClosedPin, LOW);
-    }
-
-    else if (answer.substring(0, 1) == "2")
-    {
-      digitalWrite(ledOpenedPin, LOW);
-      digitalWrite(ledClosedPin, HIGH);
-    }
-
-    else if (answer.substring(0, 1) == "3")
-    {
-      digitalWrite(ledOpenedPin, HIGH);
-      digitalWrite(ledClosedPin, HIGH);
-    }
-
-    else if (answer.substring(0, 1) == "H") // help
-    {
-      Serial.println("O: Open door");
-      Serial.println("C: Close door");
-      Serial.println("S(x): Reset status to x (default 0)");
-      Serial.println("R<times>: Repeat openen and closing door");
-      Serial.println("0: Leds off");
-      Serial.println("1: Led open on");
-      Serial.println("2: Led close on");
-      Serial.println("3: Led open and closed on");
-      Serial.println("I: Info");
-      Serial.println("L: Log toggle");
-#if !defined ClockModule
-      Serial.println("AT<dd/mm/yy hh:mm:ss>: set arduino timer date/time");
-#endif      
-#if defined ClockModule
-      Serial.println("CT<dd/mm/yy hh:mm:ss>: Set clockmodule date/time");
-#endif
-#if defined ClockModule
-      Serial.println("T: Temperature");
-#endif
-      Serial.println("H: This help");
-
-      if (logit)
-        WaitForInput("Press enter to continue");
-    }
+    Command(answer, true);
 
     return true;
   }
 
   return false;
+}
+
+void Command(String answer, bool wait)
+{
+  answer.toUpperCase();
+  Serial.print("Received: ");
+  Serial.println(answer);
+
+  if (answer.substring(0, 1) == "L") // log toggle
+  {
+    logit = !logit;
+  }
+
+  else if (answer.substring(0, 2) == "AT") // current date/time arduino: dd/mm/yy hh:mm:ss
+  {
+#if !defined ClockModule
+    if (answer[2])
+    {      
+      int day = answer.substring(2, 4).toInt();
+      int month = answer.substring(5, 7).toInt();
+      int year = answer.substring(8, 10).toInt();
+
+      int hour = answer.substring(11, 13).toInt();
+      int minute = answer.substring(14, 16).toInt();
+      int sec = answer.substring(17, 19).toInt();
+      if (day != 0 && month != 0 && year != 0)
+      {
+        dayTime = day;
+        monthTime = month;
+        yearTime = year;
+        hourTime = hour;
+        minuteTime = minute;
+        secondsTime = sec;
+        msTime = millis();
+      }
+    }
+
+    byte second, minute, hour, dayOfMonth, month, year;
+    char data[30];
+    unsigned long timeNow = millis();
+    
+    GetTime(timeNow, timeNow, year, month, dayOfMonth, hour, minute, second);
+
+    sprintf(data, "%02d/%02d/%02d %02d:%02d:%02d", (int)dayOfMonth,  (int)month, (int)year, (int)hour, (int)minute, (int)second);
+    Serial.println(data);
+
+    if (logit && wait)
+      WaitForInput("Press enter to continue");
+#endif
+  }
+
+  else if (answer.substring(0, 2) == "CT") // current date/time clock module: dd/mm/yy hh:mm:ss
+  {
+#if defined ClockModule
+    if (answer[2])
+    {
+      int day = answer.substring(2, 4).toInt();
+      int month = answer.substring(5, 7).toInt();
+      int year = answer.substring(8, 10).toInt();
+
+      int hour = answer.substring(11, 13).toInt();
+      int minute = answer.substring(14, 16).toInt();
+      int sec = answer.substring(17, 19).toInt();
+      if (day != 0 && month != 0 && year != 0)
+        setDS3231time(sec, minute, hour, 0, day, month, year);
+    }
+
+    byte second, minute, hour, dayOfWeek, dayOfMonth, month, year;
+    char data[30];
+    
+    readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
+
+    sprintf(data, "%02d/%02d/%02d %02d:%02d:%02d", (int)dayOfMonth,  (int)month, (int)year, (int)hour, (int)minute, (int)second);
+    Serial.println(data);
+
+    if (logit && wait)
+      WaitForInput("Press enter to continue");
+#endif
+  }
+
+  else if (answer.substring(0, 1) == "O") // open
+  {
+    Open();
+
+    if (logit && wait)
+      WaitForInput("Press enter to continue");
+  }
+
+  else if (answer.substring(0, 1) == "C") // close
+  {
+    Close();
+
+    if (logit && wait)
+      WaitForInput("Press enter to continue");
+  }
+
+  else if (answer.substring(0, 1) == "S") // reset status
+  {
+    status = answer.substring(1).toInt();
+  }
+
+  else if (answer.substring(0, 1) == "R") // repeat
+  {
+    int x = answer.substring(1).toInt();
+
+    for (int i = 0; i < x; i++)
+    {
+      Close();
+
+      delay(5000);
+
+      Open();
+
+      delay(5000);
+    }
+    if (logit && wait)
+      WaitForInput("Press enter to continue");
+  }
+
+  if (answer.substring(0, 1) == "T") // temperature
+  {
+#if defined ClockModule
+    Serial.print("Temperature: ");
+    Serial.print(readTemperature());
+    Serial.println("°C");
+
+    if (logit && wait)
+      WaitForInput("Press enter to continue");
+#endif
+  }
+
+  else if (answer.substring(0, 1) == "I") // info
+  {
+    char buf[255] = { 0 };
+
+    info(0, (char *) buf);
+
+    strcat(buf, "\r\n");
+
+    strcat(buf, "Measurements:");
+    int measureIndex0 = measureIndex;
+    for (int counter = nMeasures - 1; counter >= 0; counter--)
+    {
+      measureIndex0 = (measureIndex0 > 0 ? measureIndex0 : nMeasures) - 1;
+      sprintf(buf + strlen(buf), " %d", lightMeasures[measureIndex0]);
+    }
+    strcat(buf, "\r\n");
+
+    uint16_t average, minimum, maximum;
+    LightCalculation(average, minimum, maximum);
+
+    sprintf(buf + strlen(buf), "Average: %d, Minimum: %d, Maximum: %d", average, minimum, maximum);
+    strcat(buf, "\r\n");
+
+    sprintf(buf + strlen(buf), "@ Minimum: %d, Maximum: %d", ldrMinimum, ldrMaximum);
+    
+    Serial.println(buf);
+    setMQTTMonitor(buf);
+
+    if (logit && wait)
+      WaitForInput("Press enter to continue");
+  }
+
+  else if (answer.substring(0, 1) == "0")
+  {
+    SetLEDOff();
+  }
+
+  else if (answer.substring(0, 1) == "1")
+  {
+    digitalWrite(ledOpenedPin, HIGH);
+    digitalWrite(ledClosedPin, LOW);
+  }
+
+  else if (answer.substring(0, 1) == "2")
+  {
+    digitalWrite(ledOpenedPin, LOW);
+    digitalWrite(ledClosedPin, HIGH);
+  }
+
+  else if (answer.substring(0, 1) == "3")
+  {
+    digitalWrite(ledOpenedPin, HIGH);
+    digitalWrite(ledClosedPin, HIGH);
+  }
+
+  else if (answer.substring(0, 1) == "H") // help
+  {
+    Serial.println("O: Open door");
+    Serial.println("C: Close door");
+    Serial.println("S(x): Reset status to x (default 0)");
+    Serial.println("R<times>: Repeat opening and closing door");
+    Serial.println("0: Leds off");
+    Serial.println("1: Led open on");
+    Serial.println("2: Led close on");
+    Serial.println("3: Led open and closed on");
+    Serial.println("I: Info");
+    Serial.println("L: Log toggle");
+#if !defined ClockModule
+    Serial.println("AT<dd/mm/yy hh:mm:ss>: set arduino timer date/time");
+#endif      
+#if defined ClockModule
+    Serial.println("CT<dd/mm/yy hh:mm:ss>: Set clockmodule date/time");
+#endif
+#if defined ClockModule
+    Serial.println("T: Temperature");
+#endif
+    Serial.println("H: This help");
+
+    if (logit && wait)
+      WaitForInput("Press enter to continue");
+  }
 }
 
 bool isLeapYear(int year)
@@ -1269,4 +1308,180 @@ float readTemperature()
 
   return temperature;
 }
+#endif /* ClockModule */
+
+#if defined MQTTModule
+
+// See https://github.com/dawidchyrzynski/arduino-home-assistant/
+// See https://dawidchyrzynski.github.io/arduino-home-assistant/documents/getting-started/index.html
+
+#include <ArduinoHA.h>
+
+#if defined(__AVR_ATmega328P__) || defined(__AVR_ATmega328__)
+// Nano
+#include <EthernetENC.h> // uses a bit less memory
+//#include <UIPEthernet.h> // uses a bit more memory
+#else
+// Mega
+#include <Ethernet.h> // does not work with an Arduino nano and its internet shield because it uses ENC28J60 which is a different instruction set
 #endif
+
+#define BROKER_ADDR IPAddress(192,168,1,121)
+
+byte mac[] = { 0x54, 0x34, 0x41, 0x30, 0x30, 0x32 };
+
+EthernetClient client;
+HADevice device(mac, sizeof(mac));
+HAMqtt mqtt(client, device, 10);
+
+HASensor chickenguardDoorStatus("chickenguardDoorStatus");
+HASensorNumber chickenguardLDR("ChickenguardLDR");
+HASensorNumber chickenguardLDRavg("ChickenguardLDRAverage");
+HASensorNumber chickenguardTemperature("ChickenguardTemperature", HASensorNumber::PrecisionP1);
+HASensor chickenguardTimeNow("chickenguardTimeNow");
+HASensor chickenguardTimeOpened("chickenguardTimeOpened");
+HASensor chickenguardTimeClosed("chickenguardTimeClosed");
+HASensor chickenguardMonitor("chickenguardMonitor");
+
+void setupMQTT()
+{
+    Serial.println("Start Ethernet");
+
+    // you don't need to verify return status
+    Ethernet.begin(mac);
+
+    Serial.println("Done Ethernet");
+
+    device.setName("Chickenguard");
+    device.setSoftwareVersion("1.0.0");
+
+    chickenguardDoorStatus.setIcon("mdi:door");
+    chickenguardDoorStatus.setName("Door Status");
+
+    chickenguardLDR.setIcon("mdi:flare");
+    chickenguardLDR.setName("LDR");
+
+    chickenguardLDRavg.setIcon("mdi:flare");
+    chickenguardLDRavg.setName("LDR Average");
+
+    chickenguardTemperature.setIcon("mdi:thermometer");
+    chickenguardTemperature.setName("Temperature");
+    chickenguardTemperature.setUnitOfMeasurement("°C");
+
+    chickenguardTimeNow.setIcon("mdi:clock-outline");
+    chickenguardTimeNow.setName("Time Now");
+
+    chickenguardTimeOpened.setIcon("mdi:clock-out");
+    chickenguardTimeOpened.setName("Time Opened");
+
+    chickenguardTimeClosed.setIcon("mdi:clock-in");
+    chickenguardTimeClosed.setName("Time Closed");
+
+    chickenguardMonitor.setIcon("mdi:monitor");
+    chickenguardMonitor.setName("Monitor");
+
+    Serial.println("Start MQTT");
+
+    mqtt.onMessage(onMqttMessage);
+    mqtt.onConnected(onMqttConnected);
+
+    mqtt.begin(BROKER_ADDR);
+
+    Serial.println("Done MQTT");
+}
+
+
+void onMqttMessage(const char* topic, const uint8_t* payload, uint16_t length) {
+    // This callback is called when message from MQTT broker is received.
+    // Please note that you should always verify if the message's topic is the one you expect.
+    // For example: if (memcmp(topic, "myCustomTopic") == 0) { ... }
+
+    Serial.print("New message on topic: ");
+    Serial.println(topic);
+    Serial.print("Data: ");
+    String answer = "";
+    for (int i = 0; i < length;i ++)
+      answer = answer + (char)payload[i];
+    
+    Serial.println(answer);
+
+    Command(answer, false);
+
+    //mqtt.publish("myPublishTopic", "hello");
+}
+
+void onMqttConnected() {
+    Serial.println("Connected to the broker!");
+
+    // You can subscribe to custom topic if you need
+    //mqtt.subscribe("ChickenGuardCommand");
+    mqtt.subscribe("TestareaSwitchCmd/#");
+}
+
+#endif /* MQTTModule */
+
+void loopMQTT()
+{
+#if defined MQTTModule
+  Ethernet.maintain();
+  mqtt.loop();
+#endif
+}
+
+void setMQTTDoorStatus(char *msg)
+{
+#if defined MQTTModule
+  chickenguardDoorStatus.setValue(msg);
+#endif
+}
+
+void setMQTTLDR(int ldr)
+{
+#if defined MQTTModule
+  chickenguardLDR.setValue(ldr);
+#endif
+}
+
+void setMQTTLDRavg(int average)
+{
+#if defined MQTTModule
+  chickenguardLDRavg.setValue(average);
+#endif
+}
+
+void setMQTTTemperature()
+{
+  chickenguardTemperature.setValue(readTemperature());
+}
+
+void setMQTTTime()
+{
+#if defined MQTTModule
+  char buf[10];
+  byte second, minute, hour;
+
+  // retrieve data from DS3231
+  readDS3231time(&second, &minute, &hour, NULL, NULL, NULL, NULL);
+  ShowTime(&hour, &minute, &second, buf);
+  chickenguardTimeNow.setValue(buf);
+
+  if (hourOpened != 0 || minuteOpened != 0)
+    ShowTime(hourOpened, minuteOpened, NULL, buf);
+  else
+    strcpy(buf, "Unknown");
+  chickenguardTimeOpened.setValue(buf);
+
+  if (hourClosed != 0 || minuteClosed != 0)
+    ShowTime(hourClosed, minuteClosed, NULL, buf);
+  else
+    strcpy(buf, "Unknown");
+  chickenguardTimeClosed.setValue(buf);  
+#endif
+}
+
+void setMQTTMonitor(char *msg)
+{
+#if defined MQTTModule
+  chickenguardMonitor.setValue(msg);
+#endif
+}
