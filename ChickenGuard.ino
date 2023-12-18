@@ -65,7 +65,7 @@
 
 #include <Arduino.h>
 
-#define ClockModule                 // If defined then compile with the clock module code
+//#define ClockModule                 // If defined then compile with the clock module code
 #define MQTTModule                  // If defined then compile with MQTT support - can be used via Home Assistant
 
 const int ldrMorning = 600;         // light value for door to open
@@ -101,9 +101,6 @@ int measureIndex = 0;               // position in lightMeasures for next measur
 uint16_t ldrMinimum = 9999;         // minimum ldr value
 uint16_t ldrMaximum = 0;            // maximum ldr value
 
-unsigned long msOpened = 0;         // millis() value of last door open
-unsigned long msClosed = 0;         // millis() value of last door close
-
 const byte startHourOpen = 7;       // minimum hour that door may open
 const byte startMinuteOpen = 0;     // minimum minute that door may open
 
@@ -116,6 +113,7 @@ byte secondOpened = 0;              // second of last door open
 
 byte hourClosed = 0;                // hour of last door close
 byte minuteClosed = 0;              // hour of last door close
+byte secondClosed = 0;              // hour of last door close
 #endif
 
 #if !defined ClockModule
@@ -126,6 +124,9 @@ int yearTime = 0;                   // set year at msTime
 int hourTime = 0;                   // set hour at msTime
 int minuteTime = 0;                 // set minute at msTime
 int secondsTime = 0;                // set seconds at msTime
+
+unsigned long msOpened = 0;         // millis() value of last door open
+unsigned long msClosed = 0;         // millis() value of last door close
 #endif
 
 unsigned long timePrevReset = 0;    // time when a previous open now or close now was done
@@ -252,10 +253,11 @@ void MotorOpen(void)
   digitalWrite(motorClosePin, LOW);
   digitalWrite(motorOpenPin, HIGH);
 
-  msOpened = millis();
 #if defined ClockModule
   if (hasClockModule)
     readDS3231time(&secondOpened, &minuteOpened, &hourOpened, NULL, NULL, NULL, NULL);
+#else
+  msOpened = millis();
 #endif
 }
 
@@ -265,10 +267,11 @@ void MotorClose(void)
   digitalWrite(motorClosePin, HIGH);
   digitalWrite(motorOpenPin, LOW);
 
-  msClosed = millis();
 #if defined ClockModule
   if (hasClockModule)
-    readDS3231time(NULL, &minuteClosed, &hourClosed, NULL, NULL, NULL, NULL);
+    readDS3231time(&secondClosed, &minuteClosed, &hourClosed, NULL, NULL, NULL, NULL);
+#else
+  msClosed = millis();
 #endif
 }
 
@@ -568,8 +571,8 @@ int Process(bool mayOpen)
 // Check if the current time is later than the may open time - deltaMinutes
 bool MayOpen(int deltaMinutes)
 {
-  byte hour, minute;
-  GetTime(hour, minute);
+  byte hour, minute, second;
+  GetTime(hour, minute, second);
 
   int startHourOpen1 = startHourOpen;
   int startMinuteOpen1 = startMinuteOpen + deltaMinutes;
@@ -679,10 +682,10 @@ void info(int measureEverySecond, char *buf)
     ShowTime(&hour, &minute, &second, buf + strlen(buf));
 
     strcat(buf, ", Time open: ");
-    ShowTime(&hourOpened, &minuteOpened, NULL, buf + strlen(buf));
+    ShowTime(&hourOpened, &minuteOpened, &secondOpened, buf + strlen(buf));
 
     strcat(buf, ", Time closed: ");
-    ShowTime(&hourClosed, &minuteClosed, NULL, buf + strlen(buf));
+    ShowTime(&hourClosed, &minuteClosed, &secondClosed, buf + strlen(buf));
 #endif
   }
 #if !defined ClockModule    
@@ -691,13 +694,13 @@ void info(int measureEverySecond, char *buf)
     unsigned long timeNow = millis();
 
     strcat(buf, ", Time now: ");
-    ShowTime(timeNow, timeNow, NULL, buf + strlen(buf));
+    ShowTime(timeNow, timeNow, buf + strlen(buf));
 
     strcat(buf, ", Time open: ");
-    ShowTime(msOpened, timeNow, NULL, buf + strlen(buf));
+    ShowTime(msOpened, timeNow, buf + strlen(buf));
 
     strcat(buf, ", Time closed: ");
-    ShowTime(msClosed, timeNow, NULL, buf + strlen(buf));
+    ShowTime(msClosed, timeNow, buf + strlen(buf));
   }
 #endif
 }
@@ -737,7 +740,7 @@ void ShowTime(byte *hour, byte *minute, byte *second)
 }
 #endif
 
-void GetTime(byte &hour, byte &minute)
+void GetTime(byte &hour, byte &minute, byte &second)
 {
   minute = 0;
   hour = 24;
@@ -745,7 +748,7 @@ void GetTime(byte &hour, byte &minute)
   {
 #if defined ClockModule
     // retrieve data from DS3231
-    readDS3231time(NULL, &minute, &hour, NULL, NULL, NULL, NULL);
+    readDS3231time(&second, &minute, &hour, NULL, NULL, NULL, NULL);
 #endif
   }
 #if !defined ClockModule  
@@ -753,15 +756,15 @@ void GetTime(byte &hour, byte &minute)
   {
     unsigned long timeNow = millis();
 
-    GetTime(timeNow, timeNow, hour, minute);
+    GetTime(timeNow, timeNow, hour, minute, second);
   }
 #endif
 }
 
 #if !defined ClockModule
-void GetTime(unsigned long time, unsigned long timeNow, byte &hour, byte &minute)
+void GetTime(unsigned long time, unsigned long timeNow, byte &hour, byte &minute, byte &second)
 {
-  byte year, month, day, second;
+  byte year, month, day;
 
   GetTime(time, timeNow, year, month, day, hour, minute, second);
 }
@@ -823,14 +826,16 @@ void GetTime(unsigned long time, unsigned long timeNow, byte &year, byte &month,
     year = month = day = hour = minute = second = 0;
 }
 
-void ShowTime(unsigned long time, unsigned long timeNow)
+void ShowTime(unsigned long time, unsigned long timeNow, char *buf)
 {
   char data[100];
 
+  if (buf == NULL)
+    buf = data;
+
   if (msTime == 0)
   {
-    sprintf(data, "%lu", time);
-    Serial.print(data);
+    sprintf(buf, "%lu", time);
 
     if (timeNow > time)
     {
@@ -844,26 +849,33 @@ void ShowTime(unsigned long time, unsigned long timeNow)
       unsigned long seconds = ms / 1000;
       ms -= seconds * 1000;
 
-      Serial.print(" (");
-      sprintf(data, "%dd%d:%02d:%02d:%03d", (int)days, (int)hours, (int)minutes, (int)seconds, (int)ms);
-      Serial.print(data);
-      Serial.print(")");
+      strcat(buf, " (");
+      sprintf(buf + strlen(buf), "%dd%d:%02d:%02d:%03d", (int)days, (int)hours, (int)minutes, (int)seconds, (int)ms);
+      strcat(buf, ")");
     }
   }
   else
   {
+    *buf = 0;
     if (time >= msTime)
     {
-      byte hour, minute;
+      byte hour, minute, second;
 
-      GetTime(time, timeNow, hour, minute);
+      GetTime(time, timeNow, hour, minute, second);
 
-      sprintf(data, "%02d:%02d", (int)hour, (int)minute);
-      Serial.print(data);
+      sprintf(buf + strlen(buf), "%02d:%02d:%02d", (int)hour, (int)minute, (int)second);
     }
     else
-      Serial.print("-");
+      strcat(buf, "-");
   }
+  
+  if (buf == data)
+    Serial.print(buf);
+}
+
+void ShowTime(unsigned long time, unsigned long timeNow)
+{
+  ShowTime(time, timeNow, NULL);
 }
 #endif
 
@@ -1390,32 +1402,23 @@ void setupMQTT()
     Serial.println("Done MQTT");
 }
 
-
-void onMqttMessage(const char* topic, const uint8_t* payload, uint16_t length) {
-    // This callback is called when message from MQTT broker is received.
-    // Please note that you should always verify if the message's topic is the one you expect.
-    // For example: if (memcmp(topic, "myCustomTopic") == 0) { ... }
-
-    Serial.print("New message on topic: ");
-    Serial.println(topic);
-    Serial.print("Data: ");
+void onMqttMessage(const char* topic, const uint8_t* payload, uint16_t length) 
+{
+  if (strcmp(topic, "ChickenGuard/cmd") == 0)
+  {
     String answer = "";
     for (int i = 0; i < length;i ++)
       answer = answer + (char)payload[i];
     
-    Serial.println(answer);
-
     Command(answer, false);
-
-    //mqtt.publish("myPublishTopic", "hello");
+  }
 }
 
-void onMqttConnected() {
+void onMqttConnected() 
+{
     Serial.println("Connected to the broker!");
 
-    // You can subscribe to custom topic if you need
-    //mqtt.subscribe("ChickenGuardCommand");
-    mqtt.subscribe("TestareaSwitchCmd/#");
+    mqtt.subscribe("ChickenGuard/#");
 }
 
 #endif /* MQTTModule */
@@ -1451,7 +1454,9 @@ void setMQTTLDRavg(int average)
 
 void setMQTTTemperature()
 {
+#if defined MQTTModule && defined ClockModule  
   chickenguardTemperature.setValue(readTemperature());
+#endif
 }
 
 void setMQTTTime()
@@ -1460,21 +1465,35 @@ void setMQTTTime()
   char buf[10];
   byte second, minute, hour;
 
+#if defined ClockModule
   // retrieve data from DS3231
   readDS3231time(&second, &minute, &hour, NULL, NULL, NULL, NULL);
   ShowTime(&hour, &minute, &second, buf);
+#else
+  unsigned long timeNow = millis();
+
+  ShowTime(timeNow, timeNow, buf);
+#endif
   chickenguardTimeNow.setValue(buf);
 
-  if (hourOpened != 0 || minuteOpened != 0)
-    ShowTime(hourOpened, minuteOpened, NULL, buf);
+#if defined ClockModule
+  if (hourOpened != 0 || minuteOpened != 0 || secondOpened != 0)
+    ShowTime(hourOpened, minuteOpened, secondOpened, buf);
   else
     strcpy(buf, "Unknown");
+#else
+  ShowTime(msOpened, timeNow, buf);
+#endif    
   chickenguardTimeOpened.setValue(buf);
 
-  if (hourClosed != 0 || minuteClosed != 0)
-    ShowTime(hourClosed, minuteClosed, NULL, buf);
+#if defined ClockModule
+  if (hourClosed != 0 || minuteClosed != 0 || secondClosed != 0)
+    ShowTime(hourClosed, minuteClosed, secondClosed, buf);
   else
     strcpy(buf, "Unknown");
+#else
+  ShowTime(msClosed, timeNow, buf);
+#endif    
   chickenguardTimeClosed.setValue(buf);  
 #endif
 }
