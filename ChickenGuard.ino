@@ -65,7 +65,7 @@
 
 #include <Arduino.h>
 
-//#define ClockModule                 // If defined then compile with the clock module code
+#define ClockModule                 // If defined then compile with the clock module code
 #define MQTTModule                  // If defined then compile with MQTT support - can be used via Home Assistant
 
 const int ldrMorning = 600;         // light value for door to open
@@ -82,6 +82,11 @@ const int ledClosedPin = 6;         // green LED - door closed  D6
 const int ledOpenedPin = 7;         // red LED - door open  D7
 const int magnetPin = 3;            // magnet switch  D3
 const int ldrPin = A2;              // LDR (light sensor) A2
+
+const int ledNotEmptyPin = 9;       // green LED - enough water  D9
+const int ledEmptyPin = 8;          // red LED - (almost) empty water  D8
+const int almostEmptyPin = 11;      // almost empty switch D11
+const int emptyPin = 12;            // empty switch D12
 
 const int openMilliseconds = 1100;  // number of milliseconds to open door
 const int closeMilliseconds = 3000; // maximal number of milliseconds to close door
@@ -148,6 +153,10 @@ bool dstAdjust = true;              // Is there still a possible adjust today?
 unsigned long StartTime;
 int measureEverySecond;
 
+bool almostEmpty;                   // blink RED for almost empty
+
+void(* resetFunc) (void) = 0;//declare reset function at address 0
+
 // arduino function called when it starts or a reset is done
 void setup(void)
 {
@@ -172,14 +181,24 @@ void setup(void)
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
   pinMode(ledOpenedPin, OUTPUT);
+  digitalWrite(ledOpenedPin, LOW);
   pinMode(ledClosedPin, OUTPUT);
-
+  digitalWrite(ledClosedPin, LOW);
+  
+  pinMode(ledNotEmptyPin, OUTPUT);
+  digitalWrite(ledNotEmptyPin, LOW);
+  pinMode(ledEmptyPin, OUTPUT);
+  digitalWrite(ledEmptyPin, LOW);
+  pinMode(almostEmptyPin, INPUT_PULLUP);
+  pinMode(emptyPin, INPUT_PULLUP);
+  
 # if defined MQTTModule
     Serial.println("MQTT enabled");
     setupMQTT();
 
     loopMQTT();
     setMQTTDoorStatus("Setup");
+    setMQTTWaterStatus("Setup");
     loopMQTT();
 #else
     Serial.println("MQTT not enabled");
@@ -220,7 +239,7 @@ void setup(void)
 
   LightMeasurement(true); // fill the whole light measurement array with the current light value
 
-  Process(true); // opens the door if light and lets it closed if dark
+  ProcessDoor(true); // opens the door if light and lets it closed if dark
 
   measureEverySecond = measureEverySeconds + 1;
   StartTime = millis();
@@ -471,7 +490,7 @@ void checkReset(bool open)
 }
 
 // check if door must be opened or closed and do it if needed
-int Process(bool mayOpen)
+int ProcessDoor(bool mayOpen)
 {
   uint16_t average, minimum, maximum;
 
@@ -585,7 +604,6 @@ bool MayOpen(int deltaMinutes)
   return (hour > startHourOpen1 || (hour == startHourOpen1 && minute >= startMinuteOpen1));
 }
 
-// arduino loop, execute every measureEverySeconds seconds
 void loop(void)
 {
   loopMQTT();
@@ -593,10 +611,17 @@ void loop(void)
   unsigned long CurrentTime = millis();
   if (CurrentTime - StartTime >= 1000)
   {
+    // every second
+
     StartTime = CurrentTime;
+
+    ProcessWater();
+
     if (--measureEverySecond > 0)
     {
-      int ret = Process(false);
+      // every minute
+
+      int ret = ProcessDoor(false);
 
       if (status != 0)
       {
@@ -632,11 +657,44 @@ void loop(void)
 
       LightMeasurement(false);
 
-      Process(isClosedByMotor == IsClosed()); // If the door is manually closed then don't try to open
+      ProcessDoor(isClosedByMotor == IsClosed()); // If the door is manually closed then don't try to open
 
       measureEverySecond = measureEverySeconds + 1;
     }
   }
+}
+
+void ProcessWater()
+{
+  if (digitalRead(emptyPin)) // empty open
+  {
+    // RED
+    digitalWrite(ledEmptyPin, HIGH);
+    digitalWrite(ledNotEmptyPin, LOW);
+    setMQTTWaterStatus("Empty");
+  }
+  else if (digitalRead(almostEmptyPin)) // almost empty open
+  {
+    // blink red/green
+    almostEmpty = !almostEmpty;
+    digitalWrite(ledEmptyPin, almostEmpty ? HIGH : LOW);
+    digitalWrite(ledNotEmptyPin, almostEmpty ? LOW : HIGH);
+    setMQTTWaterStatus("Low");
+  }
+  else
+  {
+    // GREEN
+    digitalWrite(ledNotEmptyPin, HIGH);
+    digitalWrite(ledEmptyPin, LOW);
+    setMQTTWaterStatus("Ok");
+  }
+#if 0
+  Serial.print("Almost empty: ");
+  Serial.println(digitalRead(almostEmptyPin));
+
+  Serial.print("Empty: ");
+  Serial.println(digitalRead(emptyPin));  
+#endif  
 }
 
 void SetLEDOff()
@@ -1012,6 +1070,11 @@ void Command(String answer, bool wait)
   {
     status = answer.substring(1).toInt();
   }
+  
+  else if (answer.substring(0, 5) == "RESET") // reset
+  {
+    resetFunc(); //call reset
+  }
 
   else if (answer.substring(0, 1) == "R") // repeat
   {
@@ -1031,7 +1094,7 @@ void Command(String answer, bool wait)
       WaitForInput("Press enter to continue");
   }
 
-  if (answer.substring(0, 1) == "T") // temperature
+  else if (answer.substring(0, 1) == "T") // temperature
   {
 #if defined ClockModule
     Serial.print("Temperature: ");
@@ -1344,7 +1407,7 @@ byte mac[] = { 0x54, 0x34, 0x41, 0x30, 0x30, 0x32 };
 
 EthernetClient client;
 HADevice device(mac, sizeof(mac));
-HAMqtt mqtt(client, device, 10);
+HAMqtt mqtt(client, device, 15);
 
 HASensor chickenguardDoorStatus("chickenguardDoorStatus");
 HASensorNumber chickenguardLDR("ChickenguardLDR");
@@ -1354,6 +1417,7 @@ HASensor chickenguardTimeNow("chickenguardTimeNow");
 HASensor chickenguardTimeOpened("chickenguardTimeOpened");
 HASensor chickenguardTimeClosed("chickenguardTimeClosed");
 HASensor chickenguardMonitor("chickenguardMonitor");
+HASensor chickenguardWaterStatus("chickenguardWaterStatus");
 
 void setupMQTT()
 {
@@ -1361,24 +1425,29 @@ void setupMQTT()
 
     // you don't need to verify return status
     Ethernet.begin(mac);
-
+    
     Serial.println("Done Ethernet");
+    Serial.print("IP: ");
+    Serial.println(Ethernet.localIP());
 
     device.setName("Chickenguard");
     device.setSoftwareVersion("1.0.0");
+
+    // for icons,
+    // see https://pictogrammers.com/library/mdi/
 
     chickenguardDoorStatus.setIcon("mdi:door");
     chickenguardDoorStatus.setName("Door Status");
 
     chickenguardLDR.setIcon("mdi:flare");
     chickenguardLDR.setName("LDR");
-
+    
     chickenguardLDRavg.setIcon("mdi:flare");
     chickenguardLDRavg.setName("LDR Average");
 
     chickenguardTemperature.setIcon("mdi:thermometer");
     chickenguardTemperature.setName("Temperature");
-    chickenguardTemperature.setUnitOfMeasurement("°C");
+    chickenguardTemperature.setUnitOfMeasurement("°C"); // Also results in no logging in logbook HA
 
     chickenguardTimeNow.setIcon("mdi:clock-outline");
     chickenguardTimeNow.setName("Time Now");
@@ -1391,6 +1460,9 @@ void setupMQTT()
 
     chickenguardMonitor.setIcon("mdi:monitor");
     chickenguardMonitor.setName("Monitor");
+
+    chickenguardWaterStatus.setIcon("mdi:water-outline");
+    chickenguardWaterStatus.setName("Water Status");
 
     Serial.println("Start MQTT");
 
@@ -1502,5 +1574,12 @@ void setMQTTMonitor(char *msg)
 {
 #if defined MQTTModule
   chickenguardMonitor.setValue(msg);
+#endif
+}
+
+void setMQTTWaterStatus(char *msg)
+{
+#if defined MQTTModule
+  chickenguardWaterStatus.setValue(msg);
 #endif
 }
