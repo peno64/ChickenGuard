@@ -153,7 +153,7 @@ bool dstAdjust = true;              // Is there still a possible adjust today?
 unsigned long StartTime;
 int measureEverySecond;
 
-bool almostEmpty;                   // blink RED for almost empty
+bool blinkEmpty;                   // blink for (almost) empty
 
 void(* resetFunc) (void) = 0;//declare reset function at address 0
 
@@ -668,22 +668,23 @@ void ProcessWater()
 {
   if (digitalRead(emptyPin)) // empty open
   {
-    // RED
-    digitalWrite(ledEmptyPin, HIGH);
+    // blink red
+    blinkEmpty = !blinkEmpty;
+    digitalWrite(ledEmptyPin, blinkEmpty ? HIGH : LOW);
     digitalWrite(ledNotEmptyPin, LOW);
     setMQTTWaterStatus("Empty");
   }
   else if (digitalRead(almostEmptyPin)) // almost empty open
   {
     // blink red/green
-    almostEmpty = !almostEmpty;
-    digitalWrite(ledEmptyPin, almostEmpty ? HIGH : LOW);
-    digitalWrite(ledNotEmptyPin, almostEmpty ? LOW : HIGH);
+    blinkEmpty = !blinkEmpty;
+    digitalWrite(ledEmptyPin, blinkEmpty ? HIGH : LOW);
+    digitalWrite(ledNotEmptyPin, blinkEmpty ? LOW : HIGH);
     setMQTTWaterStatus("Low");
   }
   else
   {
-    // GREEN
+    // green
     digitalWrite(ledNotEmptyPin, HIGH);
     digitalWrite(ledEmptyPin, LOW);
     setMQTTWaterStatus("Ok");
