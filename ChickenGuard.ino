@@ -66,7 +66,14 @@
 #include <Arduino.h>
 
 #define ClockModule                 // If defined then compile with the clock module code
+#define EthernetModule              // If defined then connect to ethernet
 #define MQTTModule                  // If defined then compile with MQTT support - can be used via Home Assistant
+//#define NTPModule                   // If defined then get internet time
+
+#if !defined EthernetModule
+# undef MQTTModule                  // MQTT can't work without ethernet
+# undef NTPModule                   // NTP can't work without ethernet
+#endif
 
 const int ldrMorning = 600;         // light value for door to open
 const int ldrEvening = 40;          // light value for door to close
@@ -162,7 +169,7 @@ void setup(void)
 {
   Serial.begin(9600);
   Serial.setTimeout(60000);
-  Serial.println("Chicken hatch 17/12/2023. Copyright peno");
+  Serial.println("Chicken hatch 27/12/2023. Copyright peno");
 
 #if defined ClockModule
   hasClockModule = InitClock();
@@ -191,18 +198,32 @@ void setup(void)
   digitalWrite(ledEmptyPin, LOW);
   pinMode(almostEmptyPin, INPUT_PULLUP);
   pinMode(emptyPin, INPUT_PULLUP);
-  
+
+#if defined EthernetModule
+    setupEthernet();
+#endif
+
 # if defined MQTTModule
     Serial.println("MQTT enabled");
+    
     setupMQTT();
 
-    loopMQTT();
+    loopEthernet();
+    loopMQTT(true);
     setMQTTDoorStatus("Setup");
     setMQTTWaterStatus("Setup");
-    loopMQTT();
-#else
+    loopEthernet();
+    loopMQTT(true);
+# else
     Serial.println("MQTT not enabled");
 # endif
+
+#if defined NTPModule
+  Serial.println("NTP module enabled");
+  InitUdp();
+#else
+  Serial.println("NTP module not enabled");
+#endif
 
   SetLEDOff();
 
@@ -219,14 +240,22 @@ void setup(void)
   // First 60 seconds chance to enter commands
   for (int i = 60; i > 0; i--)
   {
-    loopMQTT();
+    loopEthernet();
+    loopMQTT(false);
 
     info(i, logit);
 
     setMQTTTime();
 
-    if (Command())
-      i = 60; // When a command was given then wait again 60 seconds
+    switch (Command())
+    {
+      case 1:
+        i = 60; // When a command was given then wait again 60 seconds
+        break;
+      case 2:
+        i = 0;
+        break;
+    }
 
     delay(1000);
   }
@@ -606,12 +635,17 @@ bool MayOpen(int deltaMinutes)
 
 void loop(void)
 {
-  loopMQTT();
+  loopEthernet();
+  loopMQTT(false);
 
   unsigned long CurrentTime = millis();
   if (CurrentTime - StartTime >= 1000)
   {
     // every second
+
+#if defined NTPModule
+    GetNTP();
+#endif
 
     StartTime = CurrentTime;
 
@@ -954,7 +988,7 @@ String WaitForInput(String question)
   return ElapsedTime < waitForInputMaxMs ? Serial.readStringUntil(10) : "";
 }
 
-bool Command()
+int Command()
 {
   if (logit)
     Serial.println("Waiting for command ");
@@ -964,18 +998,22 @@ bool Command()
     String answer;
 
     answer = WaitForInput("");
+    answer.toUpperCase();
+    if (answer.substring(0, 5) == "START")
+      return 2;
 
     Command(answer, true);
 
-    return true;
+    return 1;
   }
 
-  return false;
+  return 0;
 }
 
 void Command(String answer, bool wait)
 {
   answer.toUpperCase();
+
   Serial.print("Received: ");
   Serial.println(answer);
 
@@ -1107,6 +1145,15 @@ void Command(String answer, bool wait)
 #endif
   }
 
+#if defined EthernetModule
+  else if (answer.substring(0, 2) == "IP")
+  {
+    printLocalIP();
+    if (logit && wait)
+      WaitForInput("Press enter to continue");
+  }
+#endif
+
   else if (answer.substring(0, 1) == "I") // info
   {
     char buf[255] = { 0 };
@@ -1182,6 +1229,9 @@ void Command(String answer, bool wait)
 #endif
 #if defined ClockModule
     Serial.println("T: Temperature");
+#endif
+#if defined EthernetModule
+    Serial.println("IP: Print IP address");
 #endif
     Serial.println("H: This help");
 
@@ -1386,12 +1436,12 @@ float readTemperature()
 }
 #endif /* ClockModule */
 
-#if defined MQTTModule
+#if defined EthernetModule
 
-// See https://github.com/dawidchyrzynski/arduino-home-assistant/
-// See https://dawidchyrzynski.github.io/arduino-home-assistant/documents/getting-started/index.html
+const unsigned long waitReconnectEthernet = 5L * 60L * 1000L; /* 5 minutes */
+const int maxDurationEthernetConnect = 5000; /* 5 seconds */
 
-#include <ArduinoHA.h>
+unsigned long prevEthernetCheck = 0;
 
 #if defined(__AVR_ATmega328P__) || defined(__AVR_ATmega328__)
 // Nano
@@ -1402,11 +1452,89 @@ float readTemperature()
 #include <Ethernet.h> // does not work with an Arduino nano and its internet shield because it uses ENC28J60 which is a different instruction set
 #endif
 
-#define BROKER_ADDR IPAddress(192,168,1,121)
-
 byte mac[] = { 0x54, 0x34, 0x41, 0x30, 0x30, 0x32 };
 
 EthernetClient client;
+
+#endif /* EthernetModule */
+
+void setupEthernet()
+{
+#if defined EthernetModule  
+  int ret;
+  bool ok;
+
+  Serial.println("Start Ethernet");
+
+  ret = Ethernet.begin(mac);
+  ok = (ret == 1);
+    
+  Serial.print("Done Ethernet: ");
+  Serial.print(ok ? "OK" : "NOK: ");
+  if (!ok)
+    Serial.print(ret);
+  Serial.println();
+  Serial.print("IP: ");
+  printLocalIP();
+
+  prevEthernetCheck = 0;
+
+#endif
+}
+
+void loopEthernet()
+{
+#if defined EthernetModule
+
+  unsigned long CurrentTime1 = millis();
+  if (prevEthernetCheck == 0 /* If previous connection was ok */ ||
+      CurrentTime1 - prevEthernetCheck > waitReconnectEthernet /* If waitReconnectEthernet time is passed, try again to connect */)
+  {
+//Serial.println("Ethernet.maintain start");
+    Ethernet.maintain();
+//Serial.println("Ethernet.maintain done");
+    unsigned long CurrentTime2 = millis();
+
+    if (CurrentTime2 - CurrentTime1 > maxDurationEthernetConnect) /* If connecting to ethernet takes more than maxDurationEthernetConnect time then there is probably no ethernet. In this case we will wait 5 minutes before trying again or else everything is slowed down too much */
+    {
+      prevEthernetCheck = CurrentTime2;
+      Serial.println("No Ethernet...");
+    }
+    else if (prevEthernetCheck != 0)
+    {
+      prevEthernetCheck = 0;
+      Serial.println("Ethernet restored");
+    }
+  }
+#endif
+}
+
+void printLocalIP()
+{
+#if defined EthernetModule  
+  IPAddress ip = Ethernet.localIP();
+  Serial.println(ip);
+  
+  char sip[16];
+  sprintf(sip, "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+  setMQTTMonitor(sip);
+#endif  
+}
+
+#if defined MQTTModule
+
+// See https://github.com/dawidchyrzynski/arduino-home-assistant/
+// See https://dawidchyrzynski.github.io/arduino-home-assistant/documents/getting-started/index.html
+
+#include <ArduinoHA.h>
+
+const unsigned long waitReconnectMQTT = 5L * 60L * 1000L; /* 5 minutes */
+const int maxDurationMQTT = 900; /* 0.9 seconds */
+
+unsigned long prevMQTTCheck = 0;
+
+#define BROKER_ADDR IPAddress(192,168,1,121)
+
 HADevice device(mac, sizeof(mac));
 HAMqtt mqtt(client, device, 15);
 
@@ -1422,15 +1550,6 @@ HASensor chickenguardWaterStatus("chickenguardWaterStatus");
 
 void setupMQTT()
 {
-    Serial.println("Start Ethernet");
-
-    // you don't need to verify return status
-    Ethernet.begin(mac);
-    
-    Serial.println("Done Ethernet");
-    Serial.print("IP: ");
-    Serial.println(Ethernet.localIP());
-
     device.setName("Chickenguard");
     device.setSoftwareVersion("1.0.0");
 
@@ -1472,6 +1591,8 @@ void setupMQTT()
 
     mqtt.begin(BROKER_ADDR);
 
+    prevMQTTCheck = 0;
+
     Serial.println("Done MQTT");
 }
 
@@ -1496,11 +1617,34 @@ void onMqttConnected()
 
 #endif /* MQTTModule */
 
-void loopMQTT()
+void loopMQTT(bool force)
 {
 #if defined MQTTModule
-  Ethernet.maintain();
-  mqtt.loop();
+
+  unsigned long CurrentTime1 = millis();
+  if (force ||
+      prevMQTTCheck == 0 /* If previous connection was ok */ ||
+      CurrentTime1 - prevMQTTCheck > waitReconnectMQTT /* If waitReconnectMQTT time is passed, try again to connect */)
+  {
+//Serial.println("mqtt.loop start");
+    mqtt.loop();
+//Serial.println("mqtt.loop done");
+    unsigned long CurrentTime2 = millis();
+
+    if (force)
+      ;
+    else if (CurrentTime2 - CurrentTime1 > maxDurationMQTT) /* if mqtt.loop() took more than 0.9 sec then we assume that no MQTT connection could be established (1 second seems to be the timeout) */
+    {
+      prevMQTTCheck = CurrentTime2;
+      Serial.println("No MQTT...");
+    }
+    else if (prevMQTTCheck != 0)
+    {
+      prevMQTTCheck = 0;
+      Serial.println("MQTT restored");
+    }
+  }  
+ 
 #endif
 }
 
@@ -1584,3 +1728,102 @@ void setMQTTWaterStatus(char *msg)
   chickenguardWaterStatus.setValue(msg);
 #endif
 }
+
+#if defined NTPModule
+
+// See https://docs.arduino.cc/tutorials/ethernet-shield-rev2/udp-ntp-client
+
+//#include <SPI.h>
+#include <EthernetUdp.h>
+
+unsigned int localPort = 8888;       // local port to listen for UDP packets
+
+const char timeServer[] = "time.nist.gov"; // time.nist.gov NTP server
+
+const int NTP_PACKET_SIZE = 48; // NTP time stamp is in the first 48 bytes of the message
+
+byte packetBuffer[NTP_PACKET_SIZE]; //buffer to hold incoming and outgoing packets
+
+// A UDP instance to let us send and receive packets over UDP
+EthernetUDP Udp;
+
+void InitUdp()
+{
+  Udp.begin(localPort);
+}
+
+// send an NTP request to the time server at the given address
+void sendNTPpacket(const char * address) {
+  // set all bytes in the buffer to 0
+  memset(packetBuffer, 0, NTP_PACKET_SIZE);
+  // Initialize values needed to form NTP request
+  // (see URL above for details on the packets)
+  packetBuffer[0] = 0b11100011;   // LI, Version, Mode
+  packetBuffer[1] = 0;     // Stratum, or type of clock
+  packetBuffer[2] = 6;     // Polling Interval
+  packetBuffer[3] = 0xEC;  // Peer Clock Precision
+  // 8 bytes of zero for Root Delay & Root Dispersion
+  packetBuffer[12]  = 49;
+  packetBuffer[13]  = 0x4E;
+  packetBuffer[14]  = 49;
+  packetBuffer[15]  = 52;
+
+  // all NTP fields have been given values, now
+  // you can send a packet requesting a timestamp:
+  Udp.beginPacket(address, 123); // NTP requests are to port 123
+  Udp.write(packetBuffer, NTP_PACKET_SIZE);
+  Udp.endPacket();
+}
+
+void GetNTP()
+{
+  sendNTPpacket(timeServer); // send an NTP packet to a time server
+
+  // wait to see if a reply is available
+  delay(1000);
+  if (Udp.parsePacket()) {
+    // We've received a packet, read the data from it
+    Udp.read(packetBuffer, NTP_PACKET_SIZE); // read the packet into the buffer
+
+    // the timestamp starts at byte 40 of the received packet and is four bytes,
+    // or two words, long. First, extract the two words:
+
+    unsigned long highWord = word(packetBuffer[40], packetBuffer[41]);
+    unsigned long lowWord = word(packetBuffer[42], packetBuffer[43]);
+    // combine the four bytes (two words) into a long integer
+    // this is NTP time (seconds since Jan 1 1900):
+    unsigned long secsSince1900 = highWord << 16 | lowWord;
+    Serial.print("Seconds since Jan 1 1900 = ");
+    Serial.println(secsSince1900);
+
+    // now convert NTP time into everyday time:
+    Serial.print("Unix time = ");
+    // Unix time starts on Jan 1 1970. In seconds, that's 2208988800:
+    const unsigned long seventyYears = 2208988800UL;
+    // subtract seventy years:
+    unsigned long epoch = secsSince1900 - seventyYears;
+    // print Unix time:
+    Serial.println(epoch);
+
+
+    // print the hour, minute and second:
+    Serial.print("The UTC time is ");       // UTC is the time at Greenwich Meridian (GMT)
+    Serial.print((epoch  % 86400L) / 3600); // print the hour (86400 equals secs per day)
+    Serial.print(':');
+    if (((epoch % 3600) / 60) < 10) {
+      // In the first 10 minutes of each hour, we'll want a leading '0'
+      Serial.print('0');
+    }
+    Serial.print((epoch  % 3600) / 60); // print the minute (3600 equals secs per minute)
+    Serial.print(':');
+    if ((epoch % 60) < 10) {
+      // In the first 10 seconds of each minute, we'll want a leading '0'
+      Serial.print('0');
+    }
+    Serial.println(epoch % 60); // print the second
+  }
+  else
+    Serial.println("No NTP packet");
+}
+
+#endif /* NTPModule */
