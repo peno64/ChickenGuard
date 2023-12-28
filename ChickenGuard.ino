@@ -65,10 +65,10 @@
 
 #include <Arduino.h>
 
-#define ClockModule                 // If defined then compile with the clock module code
+//#define ClockModule                 // If defined then compile with the clock module code
 #define EthernetModule              // If defined then connect to ethernet
 #define MQTTModule                  // If defined then compile with MQTT support - can be used via Home Assistant
-//#define NTPModule                   // If defined then get internet time
+#define NTPModule                   // If defined then get internet time
 
 #if !defined EthernetModule
 # undef MQTTModule                  // MQTT can't work without ethernet
@@ -126,9 +126,7 @@ byte secondOpened = 0;              // second of last door open
 byte hourClosed = 0;                // hour of last door close
 byte minuteClosed = 0;              // hour of last door close
 byte secondClosed = 0;              // hour of last door close
-#endif
-
-#if !defined ClockModule
+#else
 unsigned long msTime = 0;           // millis() value of set time
 int dayTime = 0;                    // set day at msTime
 int monthTime = 0;                  // set month at msTime
@@ -157,12 +155,16 @@ const byte winterHour = 3;          // hour that wintertime begins
 
 bool dstAdjust = true;              // Is there still a possible adjust today?
 
-unsigned long StartTime;
+unsigned long PrevTime;             // Time to execute every second chicken loop
 int measureEverySecond;
 
-bool blinkEmpty;                   // blink for (almost) empty
+bool blinkEmpty;                    // blink for (almost) empty
 
-void(* resetFunc) (void) = 0;//declare reset function at address 0
+unsigned long PrevSyncTime;         // previous time a sync was done
+
+#define SyncTime 30 * (24 * 60 * 60 * 1000) // sync every x days
+
+void(* resetFunc) (void) = 0;       //declare reset function at address 0
 
 // arduino function called when it starts or a reset is done
 void setup(void)
@@ -199,9 +201,9 @@ void setup(void)
   pinMode(almostEmptyPin, INPUT_PULLUP);
   pinMode(emptyPin, INPUT_PULLUP);
 
-#if defined EthernetModule
+# if defined EthernetModule
     setupEthernet();
-#endif
+# endif
 
 # if defined MQTTModule
     Serial.println("MQTT enabled");
@@ -221,6 +223,10 @@ void setup(void)
 #if defined NTPModule
   Serial.println("NTP module enabled");
   InitUdp();
+
+# if !defined ClockModule
+    SyncDateTime();
+# endif  
 #else
   Serial.println("NTP module not enabled");
 #endif
@@ -271,7 +277,7 @@ void setup(void)
   ProcessDoor(true); // opens the door if light and lets it closed if dark
 
   measureEverySecond = measureEverySeconds + 1;
-  StartTime = millis();
+  PrevTime = PrevSyncTime = millis();
 }
 
 void SetStatusLed(bool on)
@@ -639,54 +645,61 @@ void loop(void)
   loopMQTT(false);
 
   unsigned long CurrentTime = millis();
-  if (CurrentTime - StartTime >= 1000)
-  {
-    // every second
 
 #if defined NTPModule
-    GetNTP();
+  if (CurrentTime - PrevSyncTime >= SyncTime)
+  {
+    PrevSyncTime = CurrentTime;
+
+    SyncDateTime();
+  }
 #endif
 
-    StartTime = CurrentTime;
+  if (CurrentTime - PrevTime >= 1000) // every second
+  {
+    PrevTime = CurrentTime;
 
-    ProcessWater();
+#if defined NTPModule
+    //printNTP();
+#endif
 
-    if (--measureEverySecond > 0)
+    ProcessWater();    
+
+    measureEverySecond--;
+
+    int ret = ProcessDoor(false);
+
+    if (status != 0)
+    {
+      // Oops something is wrong. Blink the red led as many times as the error code and then 2 seconds off and then start again
+      if (++toggle > status * 2)
+        toggle = 0;
+      SetStatusLed(toggle % 2 != 0);
+      digitalWrite(ledClosedPin, toggle == status * 2 ? HIGH : LOW);
+      digitalWrite(ledOpenedPin, toggle % 2 == 0 ? LOW : HIGH);
+    }
+
+    else if (ret == ledClosedPin || ret == ledOpenedPin)
+    {
+      // The door is about to close or open
+      // Blink the corresponding led every second
+      if (++toggle > 1)
+        toggle = 0;
+
+      digitalWrite(ret, toggle == 0 ? LOW : HIGH);
+      digitalWrite(ret == ledClosedPin ? ledOpenedPin : ledClosedPin, LOW);
+    }
+
+    else
+      SetLEDOpenClosed();
+
+    info(measureEverySecond, logit);
+
+    Command();
+
+    if (measureEverySecond == 0)
     {
       // every minute
-
-      int ret = ProcessDoor(false);
-
-      if (status != 0)
-      {
-        // Oops something is wrong. Blink the red led as many times as the error code and then 2 seconds off and then start again
-        if (++toggle > status * 2)
-          toggle = 0;
-        SetStatusLed(toggle % 2 != 0);
-        digitalWrite(ledClosedPin, toggle == status * 2 ? HIGH : LOW);
-        digitalWrite(ledOpenedPin, toggle % 2 == 0 ? LOW : HIGH);
-      }
-
-      else if (ret == ledClosedPin || ret == ledOpenedPin)
-      {
-        // The door is about to close or open
-        // Blink the corresponding led every second
-        if (++toggle > 1)
-          toggle = 0;
-
-        digitalWrite(ret, toggle == 0 ? LOW : HIGH);
-        digitalWrite(ret == ledClosedPin ? ledOpenedPin : ledClosedPin, LOW);
-      }
-
-      else
-        SetLEDOpenClosed();
-
-      info(measureEverySecond, logit);
-
-      Command();
-    }
-    else
-    {
       DSTCorrection();
 
       LightMeasurement(false);
@@ -1036,13 +1049,14 @@ void Command(String answer, bool wait)
       int sec = answer.substring(17, 19).toInt();
       if (day != 0 && month != 0 && year != 0)
       {
+        msTime = millis();
+
         dayTime = day;
         monthTime = month;
         yearTime = year;
         hourTime = hour;
         minuteTime = minute;
         secondsTime = sec;
-        msTime = millis();
       }
     }
 
@@ -1076,13 +1090,7 @@ void Command(String answer, bool wait)
         setDS3231time(sec, minute, hour, 0, day, month, year);
     }
 
-    byte second, minute, hour, dayOfWeek, dayOfMonth, month, year;
-    char data[30];
-    
-    readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
-
-    sprintf(data, "%02d/%02d/%02d %02d:%02d:%02d", (int)dayOfMonth,  (int)month, (int)year, (int)hour, (int)minute, (int)second);
-    Serial.println(data);
+    printDS3231time();
 
     if (logit && wait)
       WaitForInput("Press enter to continue");
@@ -1104,6 +1112,16 @@ void Command(String answer, bool wait)
     if (logit && wait)
       WaitForInput("Press enter to continue");
   }
+
+#if defined NTPModule
+  else if (answer.substring(0, 4) == "SYNC")
+  {
+    SyncDateTime();    
+    
+    if (logit && wait)
+      WaitForInput("Press enter to continue");
+  }
+#endif
 
   else if (answer.substring(0, 1) == "S") // reset status
   {
@@ -1227,13 +1245,15 @@ void Command(String answer, bool wait)
 #if defined ClockModule
     Serial.println("CT<dd/mm/yy hh:mm:ss>: Set clockmodule date/time");
 #endif
+#if defined NTPModule
+    Serial.println("SYNC: Synchronize date/time with NTP server");
+#endif
 #if defined ClockModule
     Serial.println("T: Temperature");
 #endif
 #if defined EthernetModule
     Serial.println("IP: Print IP address");
 #endif
-    Serial.println("H: This help");
 
     if (logit && wait)
       WaitForInput("Press enter to continue");
@@ -1419,6 +1439,17 @@ void readDS3231time(byte *second,
   b = bcdToDec(Wire.read());
   if (year != NULL)
     *year = b;
+}
+
+void printDS3231time()
+{
+  byte second, minute, hour, dayOfWeek, dayOfMonth, month, year;
+  char data[30];
+  
+  readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
+
+  sprintf(data, "%02d/%02d/%02d %02d:%02d:%02d", (int)dayOfMonth,  (int)month, (int)year, (int)hour, (int)minute, (int)second);
+  Serial.println(data);
 }
 
 float readTemperature()
@@ -1731,10 +1762,14 @@ void setMQTTWaterStatus(char *msg)
 
 #if defined NTPModule
 
-// See https://docs.arduino.cc/tutorials/ethernet-shield-rev2/udp-ntp-client
+// See https://docs.arduino.cc/tutorials/ethernet-shield-rev2/udp-ntp-client /* NTP */
+// See https://interface.fh-potsdam.de/prototyping-machines//hardware-prototypes/Boxnet/hardware_code/Write_boxes/DigitalClock_paul/ /* NTP */
+// See https://forum.arduino.cc/t/what-is-the-best-library-for-a-mega-for-local-and-gmt-time/693976/4 /* set_zone */
+// See https://forum.arduino.cc/t/time-isnt-converted-correct-from-unix-time/1060600 /* UNIX_OFFSET */
 
 //#include <SPI.h>
 #include <EthernetUdp.h>
+#include <time.h>
 
 unsigned int localPort = 8888;       // local port to listen for UDP packets
 
@@ -1750,10 +1785,13 @@ EthernetUDP Udp;
 void InitUdp()
 {
   Udp.begin(localPort);
+
+  set_zone(+1 * ONE_HOUR); // GMT+1
 }
 
 // send an NTP request to the time server at the given address
-void sendNTPpacket(const char * address) {
+void sendNTPpacket(const char * address)
+{
   // set all bytes in the buffer to 0
   memset(packetBuffer, 0, NTP_PACKET_SIZE);
   // Initialize values needed to form NTP request
@@ -1775,55 +1813,100 @@ void sendNTPpacket(const char * address) {
   Udp.endPacket();
 }
 
-void GetNTP()
+struct tm *GetNTP()
 {
+  int size;
+
+  while ((size = Udp.parsePacket()) > 0)
+  {
+    while (size > 0)
+    {
+      Udp.read(packetBuffer, min(size, NTP_PACKET_SIZE)); // discard any previously received packets
+      size -= min(size, NTP_PACKET_SIZE);
+    }
+  }
+
   sendNTPpacket(timeServer); // send an NTP packet to a time server
 
-  // wait to see if a reply is available
-  delay(1000);
-  if (Udp.parsePacket()) {
-    // We've received a packet, read the data from it
-    Udp.read(packetBuffer, NTP_PACKET_SIZE); // read the packet into the buffer
+  uint32_t beginWait = millis();
+  while (millis() - beginWait < 1500) 
+  {
+    size = Udp.parsePacket();
+    if (size >= NTP_PACKET_SIZE)
+    {
+      // We've received a packet, read the data from it
+      Udp.read(packetBuffer, NTP_PACKET_SIZE); // read the packet into the buffer
 
-    // the timestamp starts at byte 40 of the received packet and is four bytes,
-    // or two words, long. First, extract the two words:
+      // the timestamp starts at byte 40 of the received packet and is four bytes,
+      // or two words, long. First, extract the two words:
 
-    unsigned long highWord = word(packetBuffer[40], packetBuffer[41]);
-    unsigned long lowWord = word(packetBuffer[42], packetBuffer[43]);
-    // combine the four bytes (two words) into a long integer
-    // this is NTP time (seconds since Jan 1 1900):
-    unsigned long secsSince1900 = highWord << 16 | lowWord;
-    Serial.print("Seconds since Jan 1 1900 = ");
-    Serial.println(secsSince1900);
+      unsigned long highWord = word(packetBuffer[40], packetBuffer[41]);
+      unsigned long lowWord = word(packetBuffer[42], packetBuffer[43]);
+      // combine the four bytes (two words) into a long integer
+      // this is NTP time (seconds since Jan 1 1900):
+      unsigned long secsSince1900 = highWord << 16 | lowWord;
 
-    // now convert NTP time into everyday time:
-    Serial.print("Unix time = ");
-    // Unix time starts on Jan 1 1970. In seconds, that's 2208988800:
-    const unsigned long seventyYears = 2208988800UL;
-    // subtract seventy years:
-    unsigned long epoch = secsSince1900 - seventyYears;
-    // print Unix time:
-    Serial.println(epoch);
+      // Unix time starts on Jan 1 1970. In seconds, that's 2208988800:
+      const unsigned long seventyYears = 2208988800UL;
+  
+      // subtract seventy years:
+      unsigned long epoch = secsSince1900 - seventyYears;
 
+      unsigned long unixTime = epoch - UNIX_OFFSET;
 
-    // print the hour, minute and second:
-    Serial.print("The UTC time is ");       // UTC is the time at Greenwich Meridian (GMT)
-    Serial.print((epoch  % 86400L) / 3600); // print the hour (86400 equals secs per day)
-    Serial.print(':');
-    if (((epoch % 3600) / 60) < 10) {
-      // In the first 10 minutes of each hour, we'll want a leading '0'
-      Serial.print('0');
+      struct tm *time_info = localtime(&unixTime);
+
+      return time_info;
     }
-    Serial.print((epoch  % 3600) / 60); // print the minute (3600 equals secs per minute)
-    Serial.print(':');
-    if ((epoch % 60) < 10) {
-      // In the first 10 seconds of each minute, we'll want a leading '0'
-      Serial.print('0');
-    }
-    Serial.println(epoch % 60); // print the second
+  }
+
+  return NULL;
+}
+
+void printNTP()
+{
+  struct tm *time_info = GetNTP();
+  if (time_info != NULL)
+  {
+    char buf[20];
+
+    sprintf(buf, "Date: %02d/%02d/%04d", time_info->tm_mday, 1 + time_info->tm_mon, 1900 + time_info->tm_year);
+    Serial.println(buf);
+
+    sprintf(buf, "Time: %02d:%02d:%02d", time_info->tm_hour, time_info->tm_min, time_info->tm_sec);
+    Serial.println(buf);
   }
   else
     Serial.println("No NTP packet");
+}
+
+void SyncDateTime()
+{
+  for (int i = 0; i < 60; i++)
+  {
+    struct tm *time_info = GetNTP();
+    if (time_info != NULL)
+    {
+#if defined ClockModule  
+      setDS3231time(time_info->tm_sec, time_info->tm_min, time_info->tm_hour, 0, time_info->tm_mday, 1 + time_info->tm_mon, 1900 + time_info->tm_year);
+      printDS3231time();
+#else
+      msTime = millis();
+
+      dayTime = time_info->tm_mday;
+      monthTime = 1 + time_info->tm_mon;
+      yearTime = 1900 + time_info->tm_year;
+      hourTime = time_info->tm_hour;
+      minuteTime = time_info->tm_min;
+      secondsTime = time_info->tm_sec;
+
+      ShowTime(msTime, msTime, NULL);
+      Serial.println();
+#endif
+
+      break;
+    }
+  }
 }
 
 #endif /* NTPModule */
