@@ -65,10 +65,11 @@
 
 #include <Arduino.h>
 
-//#define ClockModule                 // If defined then compile with the clock module code
+#define ClockModule                 // If defined then compile with the clock module code
 #define EthernetModule              // If defined then connect to ethernet
 #define MQTTModule                  // If defined then compile with MQTT support - can be used via Home Assistant
 #define NTPModule                   // If defined then get internet time
+#define SERIAL1                     // If defined then also communicate via Serial1
 
 #if !defined EthernetModule
 # undef MQTTModule                  // MQTT can't work without ethernet
@@ -106,6 +107,8 @@ int status = 0;                     // status. 0 = all ok
 int toggle = 0;                     // led blinking toggle
 bool logit = false;                 // log to monitor
 bool isClosedByMotor;               // is door closed by motor
+bool keepOpen = false;              // keep door forced open
+bool keepClosed = false;            // keep door forced closed
 
 uint16_t lightMeasures[nMeasures];  // array with light measurements (nMeasures measures taken every measureEverySeconds seconds). Contains the last nMeasures light measures
 int measureIndex = 0;               // position in lightMeasures for next measurement.
@@ -166,21 +169,52 @@ unsigned long PrevSyncTime;         // previous time a sync was done
 
 void(* resetFunc) (void) = 0;       //declare reset function at address 0
 
+void printSerial(char *data)
+{
+  int l = strlen(data);
+  while (l > 0 && (data[l - 1] == '\r' || data[l - 1] == '\n'))
+    data[--l] = 0;
+  Serial.print(data);
+# if defined SERIAL1
+    Serial1.print(data);
+# endif
+}
+
+void printSerialln(char *data)
+{
+  if (data != NULL)
+    printSerial(data);
+  Serial.println();
+# if defined SERIAL1
+    Serial1.println();
+# endif
+}
+
+void printSerialln()
+{
+  printSerialln(NULL);
+}
+
 // arduino function called when it starts or a reset is done
 void setup(void)
 {
   Serial.begin(9600);
   Serial.setTimeout(60000);
-  Serial.println("Chicken hatch 27/12/2023. Copyright peno");
+# if defined SERIAL1
+    Serial1.begin(9600);
+    Serial1.setTimeout(60000);
+# endif
+
+  printSerialln("Chicken hatch 30/12/2023. Copyright peno");
 
 #if defined ClockModule
   hasClockModule = InitClock();
   if (hasClockModule)
-    Serial.println("Clock module found");
+    printSerialln("Clock module found");
   else
-    Serial.println("Clock module not found");
+    printSerialln("Clock module not found");
 #else
-  Serial.println("Clock module not included");
+  printSerialln("Clock module not included");
 #endif
 
   pinMode(motorClosePin, OUTPUT);
@@ -206,7 +240,7 @@ void setup(void)
 # endif
 
 # if defined MQTTModule
-    Serial.println("MQTT enabled");
+    printSerialln("MQTT enabled");
     
     setupMQTT();
 
@@ -214,21 +248,22 @@ void setup(void)
     loopMQTT(true);
     setMQTTDoorStatus("Setup");
     setMQTTWaterStatus("Setup");
+    setMQTTMonitor("Setup");
     loopEthernet();
     loopMQTT(true);
 # else
-    Serial.println("MQTT not enabled");
+    printSerialln("MQTT not enabled");
 # endif
 
 #if defined NTPModule
-  Serial.println("NTP module enabled");
+  printSerialln("NTP module enabled");
   InitUdp();
 
 # if !defined ClockModule
     SyncDateTime();
 # endif  
 #else
-  Serial.println("NTP module not enabled");
+  printSerialln("NTP module not enabled");
 #endif
 
   SetLEDOff();
@@ -244,7 +279,7 @@ void setup(void)
   LightMeasurement(true); // fill the whole light measurement array with the current light value
 
   // First 60 seconds chance to enter commands
-  for (int i = 60; i > 0; i--)
+  for (int i = 59; i >= 0; i--)
   {
     loopEthernet();
     loopMQTT(false);
@@ -253,10 +288,10 @@ void setup(void)
 
     setMQTTTime();
 
-    switch (Command())
+    switch (Command(true))
     {
       case 1:
-        i = 60; // When a command was given then wait again 60 seconds
+        i = 59; // When a command was given then wait again 60 seconds
         break;
       case 2:
         i = 0;
@@ -266,9 +301,11 @@ void setup(void)
     delay(1000);
   }
 
+  setMQTTMonitor("");
+
   logit = false;
 
-  Serial.println("Starting");
+  printSerialln("Starting");
 
   Close(); // Via the magnet switch we know for sure that the door is closed hereafter
 
@@ -276,7 +313,7 @@ void setup(void)
 
   ProcessDoor(true); // opens the door if light and lets it closed if dark
 
-  measureEverySecond = measureEverySeconds + 1;
+  measureEverySecond = measureEverySeconds;
   PrevTime = PrevSyncTime = millis();
 }
 
@@ -332,7 +369,7 @@ void MotorClose(void)
 // close the door
 void Close(void)
 {
-  Serial.println("Closing door");
+  printSerialln("Closing door");
 
   if (!IsClosed())
   {
@@ -383,7 +420,7 @@ void Close(void)
         if (IsClosed())
           status = 0; // yes, all ok
         else
-          Serial.println("Door not closed, try again");
+          printSerialln("Door not closed, try again");
       }
     }
 
@@ -391,19 +428,19 @@ void Close(void)
 
     if (status == 0)
     {
-      Serial.println("Door closed");
+      printSerialln("Door closed");
       SetLEDOpenClosed();
       isClosedByMotor = true;
     }
     else
-      Serial.println("Oops, door *not* closed");
+      printSerialln("Oops, door *not* closed");
   }
 }
 
 // Open the door
 void Open(void)
 {
-  Serial.println("Opening door");
+  printSerialln("Opening door");
 
   if (isClosedByMotor) // If not closed by motor then do nothing
   {
@@ -424,19 +461,19 @@ void Open(void)
       if (!IsClosed())
         status = 0; // all ok, door is open
       else
-        Serial.println("Door not open, check again");
+        printSerialln("Door not open, check again");
     }
 
     SetLEDOff();
 
     if (status == 0)
     {
-      Serial.println("Door open");
+      printSerialln("Door open");
       SetLEDOpenClosed();
       isClosedByMotor = false;
     }
     else
-      Serial.println("Oops, door *not* open");
+      printSerialln("Oops, door *not* open");
   }
 }
 
@@ -446,6 +483,10 @@ void LightMeasurement(bool init)
   int counter;
 
   uint16_t ldr = analogRead(ldrPin);
+  if (keepClosed)
+    ldr = ldrCloseNow;
+  else if (keepOpen)
+    ldr = ldrOpenNow;
 
   if (init)
     counter = nMeasures;
@@ -528,6 +569,7 @@ void checkReset(bool open)
 int ProcessDoor(bool mayOpen)
 {
   uint16_t average, minimum, maximum;
+  int ret = 0;
 
   LightCalculation(average, minimum, maximum);
   setMQTTLDRavg((int)average);
@@ -535,14 +577,14 @@ int ProcessDoor(bool mayOpen)
 
   int ldr = analogRead(ldrPin);
   setMQTTLDR(ldr);
-  if (ldr <= ldrCloseNow)
+  if (ldr <= ldrCloseNow || keepClosed)
   {
     checkReset(false);
     
     average = 0;
     LightMeasurement(true); // fill the whole light measurement array with the current light value
   }
-  else if (ldr >= ldrOpenNow)
+  else if (ldr >= ldrOpenNow || keepOpen)
   {
     checkReset(true);
     
@@ -552,8 +594,6 @@ int ProcessDoor(bool mayOpen)
   else
     timePrevReset = 0;
   
-  int ret = 0;
-
   bool isClosed = IsClosed();
 
 #if defined ClockModule
@@ -574,14 +614,14 @@ int ProcessDoor(bool mayOpen)
     char data[100];
     
     sprintf(data, "Something is not ok (%d - %s); idle", status, ptr);
-    Serial.println(data);
+    printSerialln(data);
 #if defined ClockModule
-    Serial.print(" Time open: ");
+    printSerial(" Time open: ");
     ShowTime(&hourOpened, &minuteOpened, &secondOpened);
-    Serial.println();
-    Serial.print(" Time actually open: ");
+    printSerialln();
+    printSerial(" Time actually open: ");
     ShowTime(&hourOpened2, &minuteOpened2, &secondOpened2);
-    Serial.println();
+    printSerialln();
 #endif    
   }
 
@@ -611,7 +651,13 @@ int ProcessDoor(bool mayOpen)
   else if (maximum >= ldrMorning && isClosed && MayOpen(-nMeasures / 2))
     ret = ledOpenedPin;
 
-  if (ret == ledOpenedPin)
+  if (keepOpen || keepClosed)
+    ret = 0;
+  else if (ret == motorOpenPin)
+    ptr = "Door opening";
+  else if (ret == motorClosePin)
+    ptr = "Door closing";
+  else if (ret == ledOpenedPin)
     ptr = "Door closed, about time to open it";
   else if (ret == ledClosedPin)
     ptr = "Door open, about time to close it";
@@ -695,7 +741,7 @@ void loop(void)
 
     info(measureEverySecond, logit);
 
-    Command();
+    Command(false);
 
     if (measureEverySecond == 0)
     {
@@ -706,7 +752,7 @@ void loop(void)
 
       ProcessDoor(isClosedByMotor == IsClosed()); // If the door is manually closed then don't try to open
 
-      measureEverySecond = measureEverySeconds + 1;
+      measureEverySecond = measureEverySeconds;
     }
   }
 }
@@ -737,11 +783,11 @@ void ProcessWater()
     setMQTTWaterStatus("Ok");
   }
 #if 0
-  Serial.print("Almost empty: ");
-  Serial.println(digitalRead(almostEmptyPin));
+  printSerial("Almost empty: ");
+  printSerialln(digitalRead(almostEmptyPin));
 
-  Serial.print("Empty: ");
-  Serial.println(digitalRead(emptyPin));  
+  printSerial("Empty: ");
+  printSerialln(digitalRead(emptyPin));  
 #endif  
 }
 
@@ -767,7 +813,7 @@ void SetLEDOpenClosed()
 
 void info(int measureEverySecond, char *buf)
 {
-  if (measureEverySecond != 0)
+  if (measureEverySecond >= 0)
     sprintf(buf + strlen(buf), "%d: ", measureEverySecond);
 
   uint16_t average, minimum, maximum;
@@ -819,7 +865,7 @@ void info(int measureEverySecond, bool dolog)
 
     info(measureEverySecond, (char *) buf);
 
-    Serial.println(buf);
+    printSerialln(buf);
     setMQTTMonitor(buf);
   }
 }
@@ -837,7 +883,7 @@ void ShowTime(byte *hour, byte *minute, byte *second, char *buf)
     sprintf(buf + strlen(buf), ":%02d", *second);
 
   if (buf == buffer)
-    Serial.print(buf);
+    printSerial(buf);
 }
 
 void ShowTime(byte *hour, byte *minute, byte *second)
@@ -976,7 +1022,7 @@ void ShowTime(unsigned long time, unsigned long timeNow, char *buf)
   }
   
   if (buf == data)
-    Serial.print(buf);
+    printSerial(buf);
 }
 
 void ShowTime(unsigned long time, unsigned long timeNow)
@@ -985,28 +1031,44 @@ void ShowTime(unsigned long time, unsigned long timeNow)
 }
 #endif
 
-String WaitForInput(String question)
+String WaitForInput(char *question)
 {
-  Serial.println(question);
+  printSerialln(question);
 
   unsigned long StartTime = millis();
   unsigned long ElapsedTime = 0;
-  while (!Serial.available() && ElapsedTime < waitForInputMaxMs)
+  while (!Serial.available()
+# if defined SERIAL1
+         && !Serial1.available()
+# endif
+         && ElapsedTime < waitForInputMaxMs)
   {
     // wait for input
     unsigned long CurrentTime = millis();
     ElapsedTime = CurrentTime - StartTime; // note that an overflow of millis() is not a problem. ElapsedTime will still be correct
   }
 
-  return ElapsedTime < waitForInputMaxMs ? Serial.readStringUntil(10) : "";
+  return ElapsedTime < waitForInputMaxMs ?
+          Serial.available() ?
+          Serial.readStringUntil(10) :
+# if defined SERIAL1          
+          Serial1.readStringUntil(10)
+# else
+          ""
+# endif
+          : "";
 }
 
-int Command()
+int Command(bool start)
 {
   if (logit)
-    Serial.println("Waiting for command ");
+    printSerialln("Waiting for command ");
 
-  if (Serial.available())
+  if (Serial.available()
+# if defined SERIAL1
+      || Serial1.available()
+# endif
+     )
   {
     String answer;
 
@@ -1015,7 +1077,7 @@ int Command()
     if (answer.substring(0, 5) == "START")
       return 2;
 
-    Command(answer, true);
+    Command(answer, true, start);
 
     return 1;
   }
@@ -1023,16 +1085,18 @@ int Command()
   return 0;
 }
 
-void Command(String answer, bool wait)
+void Command(String answer, bool wait, bool start)
 {
   answer.toUpperCase();
 
-  Serial.print("Received: ");
-  Serial.println(answer);
+  printSerial("Received: ");
+  printSerialln(answer.c_str());
 
   if (answer.substring(0, 1) == "L") // log toggle
   {
     logit = !logit;
+    if (!logit)
+      setMQTTMonitor("");
   }
 
   else if (answer.substring(0, 2) == "AT") // current date/time arduino: dd/mm/yy hh:mm:ss
@@ -1067,7 +1131,8 @@ void Command(String answer, bool wait)
     GetTime(timeNow, timeNow, year, month, dayOfMonth, hour, minute, second);
 
     sprintf(data, "%02d/%02d/%02d %02d:%02d:%02d", (int)dayOfMonth,  (int)month, (int)year, (int)hour, (int)minute, (int)second);
-    Serial.println(data);
+    printSerialln(data);
+    setMQTTMonitor(data);
 
     if (logit && wait)
       WaitForInput("Press enter to continue");
@@ -1101,6 +1166,11 @@ void Command(String answer, bool wait)
   {
     Open();
 
+    keepOpen = true;
+    keepClosed = false;
+
+    LightMeasurement(true);
+
     if (logit && wait)
       WaitForInput("Press enter to continue");
   }
@@ -1108,6 +1178,22 @@ void Command(String answer, bool wait)
   else if (answer.substring(0, 1) == "C") // close
   {
     Close();
+
+    keepClosed = true;
+    keepOpen = false;
+
+    LightMeasurement(true);
+
+    if (logit && wait)
+      WaitForInput("Press enter to continue");
+  }
+
+  else if (answer.substring(0, 1) == "A") // auto
+  {
+    keepOpen = keepClosed = false;
+
+    LightMeasurement(true); // fill the whole light measurement array with the current light value
+    ProcessDoor(true); // opens the door if light and lets it closed if dark
 
     if (logit && wait)
       WaitForInput("Press enter to continue");
@@ -1154,9 +1240,13 @@ void Command(String answer, bool wait)
   else if (answer.substring(0, 1) == "T") // temperature
   {
 #if defined ClockModule
-    Serial.print("Temperature: ");
-    Serial.print(readTemperature());
-    Serial.println("°C");
+    char buf[50];
+
+    strcpy(buf, "Temperature: ");
+    dtostrf(readTemperature(), 5, 2, buf + strlen(buf));
+    strcat(buf, " °C");
+    printSerialln(buf);
+    setMQTTMonitor(buf);
 
     if (logit && wait)
       WaitForInput("Press enter to continue");
@@ -1174,9 +1264,9 @@ void Command(String answer, bool wait)
 
   else if (answer.substring(0, 1) == "I") // info
   {
-    char buf[255] = { 0 };
+    char buf[512] = { 0 };
 
-    info(0, (char *) buf);
+    info(-1, (char *) buf);
 
     strcat(buf, "\r\n");
 
@@ -1192,12 +1282,13 @@ void Command(String answer, bool wait)
     uint16_t average, minimum, maximum;
     LightCalculation(average, minimum, maximum);
 
-    sprintf(buf + strlen(buf), "Average: %d, Minimum: %d, Maximum: %d", average, minimum, maximum);
+    sprintf(buf + strlen(buf), "Avg: %d, Min: %d, Max: %d", average, minimum, maximum);
     strcat(buf, "\r\n");
 
-    sprintf(buf + strlen(buf), "@ Minimum: %d, Maximum: %d", ldrMinimum, ldrMaximum);
+    sprintf(buf + strlen(buf), "@ Min: %d, Max: %d", ldrMinimum, ldrMaximum);
     
-    Serial.println(buf);
+    printSerialln(buf);    
+    
     setMQTTMonitor(buf);
 
     if (logit && wait)
@@ -1229,30 +1320,34 @@ void Command(String answer, bool wait)
 
   else if (answer.substring(0, 1) == "H") // help
   {
-    Serial.println("O: Open door");
-    Serial.println("C: Close door");
-    Serial.println("S(x): Reset status to x (default 0)");
-    Serial.println("R<times>: Repeat opening and closing door");
-    Serial.println("0: Leds off");
-    Serial.println("1: Led open on");
-    Serial.println("2: Led close on");
-    Serial.println("3: Led open and closed on");
-    Serial.println("I: Info");
-    Serial.println("L: Log toggle");
+    printSerialln("O: Open door");
+    printSerialln("C: Close door");
+    printSerialln("A: Auto door");
+    printSerialln("S(x): Reset status to x (default 0)");
+    printSerialln("R<times>: Repeat opening and closing door");
+    printSerialln("RESET: Reset Arduino");
+    if (start)
+      printSerialln("START: Start loop");
+    printSerialln("0: Leds off");
+    printSerialln("1: Led open on");
+    printSerialln("2: Led close on");
+    printSerialln("3: Led open and closed on");
+    printSerialln("I: Info");
+    printSerialln("L: Log toggle");
 #if !defined ClockModule
-    Serial.println("AT<dd/mm/yy hh:mm:ss>: set arduino timer date/time");
+    printSerialln("AT<dd/mm/yy hh:mm:ss>: set arduino timer date/time");
 #endif      
 #if defined ClockModule
-    Serial.println("CT<dd/mm/yy hh:mm:ss>: Set clockmodule date/time");
+    printSerialln("CT<dd/mm/yy hh:mm:ss>: Set clockmodule date/time");
 #endif
 #if defined NTPModule
-    Serial.println("SYNC: Synchronize date/time with NTP server");
+    printSerialln("SYNC: Synchronize date/time with NTP server");
 #endif
 #if defined ClockModule
-    Serial.println("T: Temperature");
+    printSerialln("T: Temperature");
 #endif
 #if defined EthernetModule
-    Serial.println("IP: Print IP address");
+    printSerialln("IP: Print IP address");
 #endif
 
     if (logit && wait)
@@ -1449,7 +1544,7 @@ void printDS3231time()
   readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
 
   sprintf(data, "%02d/%02d/%02d %02d:%02d:%02d", (int)dayOfMonth,  (int)month, (int)year, (int)hour, (int)minute, (int)second);
-  Serial.println(data);
+  printSerialln(data);
 }
 
 float readTemperature()
@@ -1495,17 +1590,17 @@ void setupEthernet()
   int ret;
   bool ok;
 
-  Serial.println("Start Ethernet");
+  printSerialln("Start Ethernet");
 
   ret = Ethernet.begin(mac);
   ok = (ret == 1);
     
-  Serial.print("Done Ethernet: ");
-  Serial.print(ok ? "OK" : "NOK: ");
+  printSerial("Done Ethernet: ");
+  printSerial(ok ? "OK" : "NOK: ");
   if (!ok)
-    Serial.print(ret);
-  Serial.println();
-  Serial.print("IP: ");
+    printSerial(ret);
+  printSerialln();
+  printSerial("IP: ");
   printLocalIP();
 
   prevEthernetCheck = 0;
@@ -1521,20 +1616,20 @@ void loopEthernet()
   if (prevEthernetCheck == 0 /* If previous connection was ok */ ||
       CurrentTime1 - prevEthernetCheck > waitReconnectEthernet /* If waitReconnectEthernet time is passed, try again to connect */)
   {
-//Serial.println("Ethernet.maintain start");
+//printSerialln("Ethernet.maintain start");
     Ethernet.maintain();
-//Serial.println("Ethernet.maintain done");
+//printSerialln("Ethernet.maintain done");
     unsigned long CurrentTime2 = millis();
 
     if (CurrentTime2 - CurrentTime1 > maxDurationEthernetConnect) /* If connecting to ethernet takes more than maxDurationEthernetConnect time then there is probably no ethernet. In this case we will wait 5 minutes before trying again or else everything is slowed down too much */
     {
       prevEthernetCheck = CurrentTime2;
-      Serial.println("No Ethernet...");
+      printSerialln("No Ethernet...");
     }
     else if (prevEthernetCheck != 0)
     {
       prevEthernetCheck = 0;
-      Serial.println("Ethernet restored");
+      printSerialln("Ethernet restored");
     }
   }
 #endif
@@ -1544,12 +1639,13 @@ void printLocalIP()
 {
 #if defined EthernetModule  
   IPAddress ip = Ethernet.localIP();
-  Serial.println(ip);
-  
+
   char sip[16];
   sprintf(sip, "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+
+  printSerialln(sip);
   setMQTTMonitor(sip);
-#endif  
+#endif
 }
 
 #if defined MQTTModule
@@ -1563,6 +1659,7 @@ const unsigned long waitReconnectMQTT = 5L * 60L * 1000L; /* 5 minutes */
 const int maxDurationMQTT = 900; /* 0.9 seconds */
 
 unsigned long prevMQTTCheck = 0;
+int cntMQTTCheck = 0;
 
 #define BROKER_ADDR IPAddress(192,168,1,121)
 
@@ -1615,7 +1712,7 @@ void setupMQTT()
     chickenguardWaterStatus.setIcon("mdi:water-outline");
     chickenguardWaterStatus.setName("Water Status");
 
-    Serial.println("Start MQTT");
+    printSerialln("Start MQTT");
 
     mqtt.onMessage(onMqttMessage);
     mqtt.onConnected(onMqttConnected);
@@ -1623,8 +1720,9 @@ void setupMQTT()
     mqtt.begin(BROKER_ADDR);
 
     prevMQTTCheck = 0;
+    cntMQTTCheck = 0;
 
-    Serial.println("Done MQTT");
+    printSerialln("Done MQTT");
 }
 
 void onMqttMessage(const char* topic, const uint8_t* payload, uint16_t length) 
@@ -1635,13 +1733,13 @@ void onMqttMessage(const char* topic, const uint8_t* payload, uint16_t length)
     for (int i = 0; i < length;i ++)
       answer = answer + (char)payload[i];
     
-    Command(answer, false);
+    Command(answer, false, false);
   }
 }
 
 void onMqttConnected() 
 {
-    Serial.println("Connected to the broker!");
+    printSerialln("Connected to the broker!");
 
     mqtt.subscribe("ChickenGuard/#");
 }
@@ -1653,26 +1751,33 @@ void loopMQTT(bool force)
 #if defined MQTTModule
 
   unsigned long CurrentTime1 = millis();
+
   if (force ||
       prevMQTTCheck == 0 /* If previous connection was ok */ ||
       CurrentTime1 - prevMQTTCheck > waitReconnectMQTT /* If waitReconnectMQTT time is passed, try again to connect */)
+    cntMQTTCheck = 0;
+  else if (++cntMQTTCheck >= 5) /* wait until there are 5 times delays */
+    cntMQTTCheck = 0;
+
+  if (cntMQTTCheck == 0)
   {
-//Serial.println("mqtt.loop start");
+//printSerialln("mqtt.loop start");
     mqtt.loop();
-//Serial.println("mqtt.loop done");
+//printSerialln("mqtt.loop done");
     unsigned long CurrentTime2 = millis();
 
     if (force)
-      ;
+      cntMQTTCheck = 0;
     else if (CurrentTime2 - CurrentTime1 > maxDurationMQTT) /* if mqtt.loop() took more than 0.9 sec then we assume that no MQTT connection could be established (1 second seems to be the timeout) */
     {
       prevMQTTCheck = CurrentTime2;
-      Serial.println("No MQTT...");
+      printSerialln("No MQTT...");
     }
     else if (prevMQTTCheck != 0)
     {
       prevMQTTCheck = 0;
-      Serial.println("MQTT restored");
+      cntMQTTCheck = 0;
+      printSerialln("MQTT restored");
     }
   }  
  
@@ -1726,7 +1831,7 @@ void setMQTTTime()
 
 #if defined ClockModule
   if (hourOpened != 0 || minuteOpened != 0 || secondOpened != 0)
-    ShowTime(hourOpened, minuteOpened, secondOpened, buf);
+    ShowTime(&hourOpened, &minuteOpened, &secondOpened, buf);
   else
     strcpy(buf, "Unknown");
 #else
@@ -1736,7 +1841,7 @@ void setMQTTTime()
 
 #if defined ClockModule
   if (hourClosed != 0 || minuteClosed != 0 || secondClosed != 0)
-    ShowTime(hourClosed, minuteClosed, secondClosed, buf);
+    ShowTime(&hourClosed, &minuteClosed, &secondClosed, buf);
   else
     strcpy(buf, "Unknown");
 #else
@@ -1749,6 +1854,8 @@ void setMQTTTime()
 void setMQTTMonitor(char *msg)
 {
 #if defined MQTTModule
+  if (strlen(msg) > 255) // it looks like that a message may not be longer than 255 characters
+    msg[255] = 0;
   chickenguardMonitor.setValue(msg);
 #endif
 }
@@ -1871,13 +1978,13 @@ void printNTP()
     char buf[20];
 
     sprintf(buf, "Date: %02d/%02d/%04d", time_info->tm_mday, 1 + time_info->tm_mon, 1900 + time_info->tm_year);
-    Serial.println(buf);
+    printSerialln(buf);
 
     sprintf(buf, "Time: %02d:%02d:%02d", time_info->tm_hour, time_info->tm_min, time_info->tm_sec);
-    Serial.println(buf);
+    printSerialln(buf);
   }
   else
-    Serial.println("No NTP packet");
+    printSerialln("No NTP packet");
 }
 
 void SyncDateTime()
@@ -1901,7 +2008,7 @@ void SyncDateTime()
       secondsTime = time_info->tm_sec;
 
       ShowTime(msTime, msTime, NULL);
-      Serial.println();
+      printSerialln();
 #endif
 
       break;
