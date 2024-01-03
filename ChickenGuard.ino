@@ -69,15 +69,13 @@
 #define EthernetModule              // If defined then connect to ethernet
 #define MQTTModule                  // If defined then compile with MQTT support - can be used via Home Assistant
 #define NTPModule                   // If defined then get internet time
+#define EEPROMModule                // If defined then store data in EEPROM
 #define SERIAL1                     // If defined then also communicate via Serial1
 
 #if !defined EthernetModule
 # undef MQTTModule                  // MQTT can't work without ethernet
 # undef NTPModule                   // NTP can't work without ethernet
 #endif
-
-const int ldrMorning = 600;         // light value for door to open
-const int ldrEvening = 40;          // light value for door to close
 
 const int ldrOpenNow = 1020;        // light value for door open now
 const int ldrCloseNow = 0;          // light value for door close now
@@ -96,12 +94,31 @@ const int ledEmptyPin = 8;          // red LED - (almost) empty water  D8
 const int almostEmptyPin = 11;      // almost empty switch D11
 const int emptyPin = 12;            // empty switch D12
 
-const int openMilliseconds = 1100;  // number of milliseconds to open door
-const int closeMilliseconds = 3000; // maximal number of milliseconds to close door
-const int closeWaitTime1 = 1400;    // after this much milliseconds, stop closing door ...
-const int closeWaitTime2 = 2000;    // ... for this much of milliseconds and then continue closing the door
-
+// ... for this much of milliseconds and then continue closing the door
 const unsigned long waitForInputMaxMs = 900000; // maximum wait time for input (900000 ms = 15 min)
+
+int ldrMorning;                     // light value for door to open
+int ldrEvening;                     // light value for door to close
+
+int openMilliseconds;               // number of milliseconds to open door
+int closeMilliseconds;              // maximal number of milliseconds to close door
+int closeWaitTime1;                 // after this much milliseconds, stop closing door ...
+int closeWaitTime2;    
+
+struct ChangeableDataStruct
+{
+  char *name;
+  int *variable;
+  int initialValue;
+} changeableData[] = 
+{
+  { "ldrMorning", &ldrMorning, 600 },
+  { "ldrEvening", &ldrEvening, 40 },
+  { "openMilliseconds", &openMilliseconds, 1100 },
+  { "closeMilliseconds", &closeMilliseconds, 3000 },
+  { "closeWaitTime1", &closeWaitTime1, 1400 },
+  { "closeWaitTime2", &closeWaitTime2, 2000 },
+};
 
 int status = 0;                     // status. 0 = all ok
 int toggle = 0;                     // led blinking toggle
@@ -195,6 +212,29 @@ void printSerialln()
   printSerialln(NULL);
 }
 
+void showChangeableData()
+{
+  char buf[50];
+
+  for (int i = 0; i < sizeof(changeableData) / sizeof(*changeableData); i++)
+  {
+    sprintf(buf, "%s = %d", changeableData[i].name, *(changeableData[i].variable));
+    printSerialln(buf);
+  }
+}
+
+void setChangeableData()
+{
+  for (int i = 0; i < sizeof(changeableData) / sizeof(*changeableData); i++)
+    *(changeableData[i].variable) = changeableData[i].initialValue;
+
+# if defined EEPROMModule
+    readChangeableData();
+# endif
+
+  showChangeableData();
+}
+
 // arduino function called when it starts or a reset is done
 void setup(void)
 {
@@ -205,7 +245,9 @@ void setup(void)
     Serial1.setTimeout(60000);
 # endif
 
-  printSerialln("Chicken hatch 30/12/2023. Copyright peno");
+  printSerialln("Chicken hatch 02/01/2024. Copyright peno");
+
+  setChangeableData();
 
 #if defined ClockModule
   hasClockModule = InitClock();
@@ -291,7 +333,7 @@ void setup(void)
     switch (Command(true))
     {
       case 1:
-        i = 59; // When a command was given then wait again 60 seconds
+        i = 60; // When a command was given then wait again 60 seconds
         break;
       case 2:
         i = 0;
@@ -1085,6 +1127,35 @@ int Command(bool start)
   return 0;
 }
 
+void setChangeableValue(char *name, char *svalue)
+{
+  int value;
+  bool found = false;
+
+  printSerial("Setting value for variable ");
+  printSerial(name);
+  printSerial(" to ");
+  printSerialln(svalue);
+
+  for (int i = 0; i < sizeof(changeableData) / sizeof(*changeableData); i++)
+  {
+    if (strcasecmp(name, changeableData[i].name) == 0)
+    {
+      value = atoi(svalue);
+      *(changeableData[i].variable) = value;
+#if defined EEPROMModule
+        writeChangeableData();
+#endif
+      showChangeableData();
+      found = true;
+      break;
+    }
+  }
+
+  if (!found)
+    printSerialln("Variable not found in changeable data");
+}
+
 void Command(String answer, bool wait, bool start)
 {
   answer.toUpperCase();
@@ -1209,6 +1280,34 @@ void Command(String answer, bool wait, bool start)
   }
 #endif
 
+#if defined EEPROMModule
+  else if (answer.substring(0, 4) == "SET ")
+  {
+    char *ptr, *value, *variable = answer.c_str() + 4;
+
+    while (*variable == ' ')
+      variable++;
+    for (ptr = variable; *ptr && *ptr != '='; ptr++);    
+    if (*ptr)
+    {
+      *ptr = 0;
+
+      value = ptr + 1;
+
+      while (--ptr >= variable && *ptr == ' ')
+        *ptr = 0;
+
+      while (*value == ' ')
+        value++;
+      ptr = value + strlen(value);
+      while (--ptr >= value && *ptr == ' ')
+        *ptr = 0;
+      
+      setChangeableValue(variable, value);
+    }
+  }
+#endif
+
   else if (answer.substring(0, 1) == "S") // reset status
   {
     status = answer.substring(1).toInt();
@@ -1325,9 +1424,6 @@ void Command(String answer, bool wait, bool start)
     printSerialln("A: Auto door");
     printSerialln("S(x): Reset status to x (default 0)");
     printSerialln("R<times>: Repeat opening and closing door");
-    printSerialln("RESET: Reset Arduino");
-    if (start)
-      printSerialln("START: Start loop");
     printSerialln("0: Leds off");
     printSerialln("1: Led open on");
     printSerialln("2: Led close on");
@@ -1349,6 +1445,12 @@ void Command(String answer, bool wait, bool start)
 #if defined EthernetModule
     printSerialln("IP: Print IP address");
 #endif
+    printSerialln("RESET: Reset Arduino");
+#if defined EEPROMModule
+    printSerialln("SET name=value");
+#endif
+    if (start)
+      printSerialln("START: Start loop");
 
     if (logit && wait)
       WaitForInput("Press enter to continue");
@@ -2017,3 +2119,48 @@ void SyncDateTime()
 }
 
 #endif /* NTPModule */
+
+#if defined EEPROMModule
+
+#include <EEPROM.h>
+
+#define EEPROMMagic 25687
+
+void readChangeableData()
+{
+  int address = 0;
+  int value;
+
+  EEPROM.get(address, value);
+  if (value == EEPROMMagic)
+  {
+    printSerialln("Reading changeable data from EEPROM");
+    for (int i = 0; i < sizeof(changeableData) / sizeof(*changeableData); i++)
+    {
+      address += sizeof(value);
+      EEPROM.get(address, value);
+      *(changeableData[i].variable) = value;
+    }
+  }
+  else
+    printSerialln("No changeable data stored in EEPROM");
+}
+
+void writeChangeableData()
+{
+  int address = 0;
+  int value;
+
+  printSerialln("Writing changeable data to EEPROM");
+
+  value = EEPROMMagic;
+  EEPROM.put(address, value);
+  for (int i = 0; i < sizeof(changeableData) / sizeof(*changeableData); i++)
+  {
+    address += sizeof(value);
+    value = *(changeableData[i].variable);
+    EEPROM.put(address, value);
+  }
+}
+
+#endif /* EEPROMModule */
