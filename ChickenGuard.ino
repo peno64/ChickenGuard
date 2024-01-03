@@ -105,7 +105,7 @@ int closeMilliseconds;              // maximal number of milliseconds to close d
 int closeWaitTime1;                 // after this much milliseconds, stop closing door ...
 int closeWaitTime2;    
 
-struct ChangeableDataStruct
+struct
 {
   char *name;
   int *variable;
@@ -212,15 +212,32 @@ void printSerialln()
   printSerialln(NULL);
 }
 
-void showChangeableData()
+void showChangeableData(char *name)
 {
   char buf[50];
+  bool found = false;
 
   for (int i = 0; i < sizeof(changeableData) / sizeof(*changeableData); i++)
   {
-    sprintf(buf, "%s = %d", changeableData[i].name, *(changeableData[i].variable));
-    printSerialln(buf);
+    if (name == NULL || *name == 0 || strcasecmp(name, changeableData[i].name) == 0)
+    {
+      sprintf(buf, "%s = %d", changeableData[i].name, *(changeableData[i].variable));
+      if (name != NULL && *name)
+        setMQTTMonitor(buf);
+      printSerialln(buf);
+      found = true;
+    }
   }
+  if (!found)
+  {
+    printSerialln("Variable not found in changeable data");
+    setMQTTMonitor("Variable not found in changeable data");
+  }
+}
+
+void showChangeableData()
+{
+  showChangeableData(NULL);
 }
 
 void setChangeableData()
@@ -1145,15 +1162,17 @@ void setChangeableValue(char *name, char *svalue)
       *(changeableData[i].variable) = value;
 #if defined EEPROMModule
         writeChangeableData();
-#endif
-      showChangeableData();
+#endif      
       found = true;
       break;
     }
   }
 
   if (!found)
+  {
     printSerialln("Variable not found in changeable data");
+    setMQTTMonitor("Variable not found in changeable data");
+  }
 }
 
 void Command(String answer, bool wait, bool start)
@@ -1163,14 +1182,7 @@ void Command(String answer, bool wait, bool start)
   printSerial("Received: ");
   printSerialln(answer.c_str());
 
-  if (answer.substring(0, 1) == "L") // log toggle
-  {
-    logit = !logit;
-    if (!logit)
-      setMQTTMonitor("");
-  }
-
-  else if (answer.substring(0, 2) == "AT") // current date/time arduino: dd/mm/yy hh:mm:ss
+  if (answer.substring(0, 2) == "AT") // current date/time arduino: dd/mm/yy hh:mm:ss
   {
 #if !defined ClockModule
     if (answer[2])
@@ -1280,8 +1292,7 @@ void Command(String answer, bool wait, bool start)
   }
 #endif
 
-#if defined EEPROMModule
-  else if (answer.substring(0, 4) == "SET ")
+  else if (answer.substring(0, 4) == "LET ")
   {
     char *ptr, *value, *variable = answer.c_str() + 4;
 
@@ -1304,9 +1315,32 @@ void Command(String answer, bool wait, bool start)
         *ptr = 0;
       
       setChangeableValue(variable, value);
+      showChangeableData(variable);
     }
   }
-#endif
+
+  else if (answer.substring(0, 3) == "GET")
+  {
+    char *ptr, *value, *variable;
+
+    variable = answer.length() > 3 ? answer.c_str() + 4 : NULL;
+    if (variable != NULL)
+    {
+      while (*variable == ' ')
+        variable++;
+      ptr = variable + strlen(variable);
+      while (--ptr >= variable && *ptr == ' ')
+        *ptr = 0;
+    } 
+    showChangeableData(variable);
+  }
+
+  else if (answer.substring(0, 1) == "L") // log toggle
+  {
+    logit = !logit;
+    if (!logit)
+      setMQTTMonitor("");
+  }
 
   else if (answer.substring(0, 1) == "S") // reset status
   {
@@ -1446,9 +1480,8 @@ void Command(String answer, bool wait, bool start)
     printSerialln("IP: Print IP address");
 #endif
     printSerialln("RESET: Reset Arduino");
-#if defined EEPROMModule
-    printSerialln("SET name=value");
-#endif
+    printSerialln("LET name=value");
+    printSerialln("GET {name}");
     if (start)
       printSerialln("START: Start loop");
 
@@ -2143,7 +2176,7 @@ void readChangeableData()
     }
   }
   else
-    printSerialln("No changeable data stored in EEPROM");
+    printSerialln("No valid changeable data stored in EEPROM");
 }
 
 void writeChangeableData()
