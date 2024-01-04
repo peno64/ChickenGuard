@@ -61,6 +61,16 @@
   This can be fixed with a condensator between the reset pin and gnd. I have used 0.47 µF and this works fine.
   However note that it must be disconnected when a new sketch is uploaded. Otherwise you get an error that it could not upload. I use a small switch to do that.
 
+  Next to controling the door, also the water level can be monitored. I have two water level switched in the water tank. One shows if the water is close to empty, the other if it is really empty.
+
+  When SERIAL1 is defined then communication can also be done via Serial1. A bluetooth HC-05 module can be connected to make this possible.
+
+  When EEPROMModule is defined then some data is written to EEPROM such that the values are not lost when restarted
+
+  If EthernetModule is defined and the arduino is connected to ethernet then two extra modules also become available:
+   MQTTModule to send MQTT messages to/from the arduino to the MQTT server. This can be used in combination with home assistant to monitor the status
+   NTPModule to synchronise the date/time with internet time. This is done every 30 days and at startup when ClockModule is not defined
+
 */
 
 #include <Arduino.h>
@@ -84,13 +94,14 @@ const int nMeasures = 5;            // number of measures to do on which an aver
 const int measureEverySeconds = 60; // number of seconds between light measurements and descision if door should be closed or opened
 const int motorClosePin = 4;        // motor turns one way to close the door
 const int motorOpenPin = 5;         // motor turns other way to open the door
-const int ledClosedPin = 6;         // green LED - door closed  D6
-const int ledOpenedPin = 7;         // red LED - door open  D7
+const int ledClosedPinInit = 6;
+int ledClosedPin = ledClosedPinInit;// green LED - door closed  D6
+int ledOpenedPin = 7;               // red LED - door open  D7
 const int magnetPin = 3;            // magnet switch  D3
 const int ldrPin = A2;              // LDR (light sensor) A2
 
-const int ledNotEmptyPin = 9;       // green LED - enough water  D9
-const int ledEmptyPin = 8;          // red LED - (almost) empty water  D8
+int ledNotEmptyPin = 9;             // green LED - enough water  D9
+int ledEmptyPin = 8;                // red LED - (almost) empty water  D8
 const int almostEmptyPin = 11;      // almost empty switch D11
 const int emptyPin = 12;            // empty switch D12
 
@@ -1175,6 +1186,14 @@ void setChangeableValue(char *name, char *svalue)
   }
 }
 
+void swap(int &i1, int &i2)
+{
+  int i = i1;
+
+  i1 = i2;
+  i2 = i;
+}
+
 void Command(String answer, bool wait, bool start)
 {
   answer.toUpperCase();
@@ -1278,6 +1297,36 @@ void Command(String answer, bool wait, bool start)
     LightMeasurement(true); // fill the whole light measurement array with the current light value
     ProcessDoor(true); // opens the door if light and lets it closed if dark
 
+    if (logit && wait)
+      WaitForInput("Press enter to continue");
+  }
+
+  else if (answer.substring(0, 2) == "SL")
+  {
+    int ledClosedPinValue = digitalRead(ledClosedPin);
+    int ledOpenedPinValue = digitalRead(ledOpenedPin);
+    int ledNotEmptyPinValue = digitalRead(ledNotEmptyPin);
+    int ledEmptyPinValue = digitalRead(ledEmptyPin);
+
+    swap(ledClosedPin, ledNotEmptyPin);
+    swap(ledOpenedPin, ledEmptyPin);
+
+    digitalWrite(ledClosedPin, ledClosedPinValue);
+    digitalWrite(ledOpenedPin, ledOpenedPinValue);
+    digitalWrite(ledNotEmptyPin, ledNotEmptyPinValue);
+    digitalWrite(ledEmptyPin, ledEmptyPinValue);
+
+    if (ledClosedPin == ledClosedPinInit)
+    {
+      printSerialln("LEDs normal");
+      setMQTTMonitor("LEDs normal");
+    }
+    else
+    {
+      printSerialln("LEDs switched");
+      setMQTTMonitor("LEDs switched");
+    }
+    
     if (logit && wait)
       WaitForInput("Press enter to continue");
   }
@@ -1428,29 +1477,6 @@ void Command(String answer, bool wait, bool start)
       WaitForInput("Press enter to continue");
   }
 
-  else if (answer.substring(0, 1) == "0")
-  {
-    SetLEDOff();
-  }
-
-  else if (answer.substring(0, 1) == "1")
-  {
-    digitalWrite(ledOpenedPin, HIGH);
-    digitalWrite(ledClosedPin, LOW);
-  }
-
-  else if (answer.substring(0, 1) == "2")
-  {
-    digitalWrite(ledOpenedPin, LOW);
-    digitalWrite(ledClosedPin, HIGH);
-  }
-
-  else if (answer.substring(0, 1) == "3")
-  {
-    digitalWrite(ledOpenedPin, HIGH);
-    digitalWrite(ledClosedPin, HIGH);
-  }
-
   else if (answer.substring(0, 1) == "H") // help
   {
     printSerialln("O: Open door");
@@ -1458,12 +1484,9 @@ void Command(String answer, bool wait, bool start)
     printSerialln("A: Auto door");
     printSerialln("S(x): Reset status to x (default 0)");
     printSerialln("R<times>: Repeat opening and closing door");
-    printSerialln("0: Leds off");
-    printSerialln("1: Led open on");
-    printSerialln("2: Led close on");
-    printSerialln("3: Led open and closed on");
     printSerialln("I: Info");
     printSerialln("L: Log toggle");
+    printSerialln("SL: Switch LEDs");
 #if !defined ClockModule
     printSerialln("AT<dd/mm/yy hh:mm:ss>: set arduino timer date/time");
 #endif      
@@ -1865,7 +1888,7 @@ void onMqttMessage(const char* topic, const uint8_t* payload, uint16_t length)
   if (strcmp(topic, "ChickenGuard/cmd") == 0)
   {
     String answer = "";
-    for (int i = 0; i < length;i ++)
+    for (int i = 0; i < length; i++)
       answer = answer + (char)payload[i];
     
     Command(answer, false, false);
