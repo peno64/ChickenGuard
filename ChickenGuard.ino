@@ -81,6 +81,7 @@
 #define NTPModule                   // If defined then get internet time
 #define EEPROMModule                // If defined then store data in EEPROM
 #define SERIAL1                     // If defined then also communicate via Serial1
+//#define CONTROLBUILTIN              // If set then set the BUILTIN LED
 
 #if !defined EthernetModule
 # undef MQTTModule                  // MQTT can't work without ethernet
@@ -273,7 +274,7 @@ void setup(void)
     Serial1.setTimeout(60000);
 # endif
 
-  printSerialln("Chicken hatch 02/01/2024. Copyright peno");
+  printSerialln("Chicken hatch 04/01/2024. Copyright peno");
 
   setChangeableData();
 
@@ -389,10 +390,12 @@ void setup(void)
 
 void SetStatusLed(bool on)
 {
+#if CONTROLBUILTIN
   if (on)
     digitalWrite(LED_BUILTIN, HIGH);
   else
     digitalWrite(LED_BUILTIN, LOW);
+#endif
 }
 
 // Is the door closed according to the magnetic switch
