@@ -88,6 +88,24 @@
 # undef NTPModule                   // NTP can't work without ethernet
 #endif
 
+#if defined MQTTMModule
+
+/*
+
+Following must be added to configuration.yaml of HA:
+
+logbook:
+  exclude:
+    entities:
+      - sensor.chickenguard_time_now
+      - sensor.chickenguard_ldr
+      - sensor.chickenguard_ldr_average
+      - sensor.chickenguard_monitor
+
+*/
+
+#endif
+
 const int ldrOpenNow = 1020;        // light value for door open now
 const int ldrCloseNow = 0;          // light value for door close now
 
@@ -274,7 +292,7 @@ void setup(void)
     Serial1.setTimeout(60000);
 # endif
 
-  printSerialln("Chicken hatch 04/01/2024. Copyright peno");
+  printSerialln("Chicken hatch 05/01/2024. Copyright peno");
 
   setChangeableData();
 
@@ -1445,6 +1463,13 @@ void Command(String answer, bool wait, bool start)
     if (logit && wait)
       WaitForInput("Press enter to continue");
   }
+  else if (answer.substring(0, 2) == "IS")
+  {
+    printEthernetStatus();
+
+    if (logit && wait)
+      WaitForInput("Press enter to continue");
+  }
 #endif
 
   else if (answer.substring(0, 1) == "I") // info
@@ -1504,6 +1529,7 @@ void Command(String answer, bool wait, bool start)
 #endif
 #if defined EthernetModule
     printSerialln("IP: Print IP address");
+    printSerialln("IS: Show Ethernet status");
 #endif
     printSerialln("RESET: Reset Arduino");
     printSerialln("LET name=value");
@@ -1728,6 +1754,7 @@ float readTemperature()
 const unsigned long waitReconnectEthernet = 5L * 60L * 1000L; /* 5 minutes */
 const int maxDurationEthernetConnect = 5000; /* 5 seconds */
 
+bool hasEthernet = false;
 unsigned long prevEthernetCheck = 0;
 
 #if defined(__AVR_ATmega328P__) || defined(__AVR_ATmega328__)
@@ -1784,21 +1811,25 @@ void loopEthernet()
 
     if (CurrentTime2 - CurrentTime1 > maxDurationEthernetConnect) /* If connecting to ethernet takes more than maxDurationEthernetConnect time then there is probably no ethernet. In this case we will wait 5 minutes before trying again or else everything is slowed down too much */
     {
+      hasEthernet = false;
       prevEthernetCheck = CurrentTime2;
       printSerialln("No Ethernet...");
     }
     else if (prevEthernetCheck != 0)
     {
+      hasEthernet = true;
       prevEthernetCheck = 0;
       printSerialln("Ethernet restored");
     }
+    else
+      hasEthernet = true;
   }
 #endif
 }
 
 void printLocalIP()
 {
-#if defined EthernetModule  
+#if defined EthernetModule
   IPAddress ip = Ethernet.localIP();
 
   char sip[16];
@@ -1807,6 +1838,32 @@ void printLocalIP()
   printSerialln(sip);
   setMQTTMonitor(sip);
 #endif
+}
+
+void printEthernetStatus()
+{
+#if defined EthernetModule  
+  if (hasEthernet)
+    printSerialln("Ethernet ok");
+  else
+  {
+    printSerialln("Ethernet nok");
+
+    unsigned long CurrentTime1 = millis();
+    unsigned long nextCheck;
+    if (prevEthernetCheck == 0 /* If previous connection was ok */ ||
+        CurrentTime1 - prevEthernetCheck > waitReconnectEthernet /* If waitReconnectEthernet time is passed, try again to connect */)
+      nextCheck = 0;
+    else
+      nextCheck = waitReconnectEthernet - (CurrentTime1 - prevEthernetCheck);
+    
+    char buf[50];
+    sprintf(buf, "Next check in %d seconds", (int) (nextCheck / 1000));
+    printSerialln(buf);
+  }
+#else
+  printSerialln("No Ethernet connection");
+#endif  
 }
 
 #if defined MQTTModule
@@ -1911,35 +1968,38 @@ void loopMQTT(bool force)
 {
 #if defined MQTTModule
 
-  unsigned long CurrentTime1 = millis();
-
-  if (force ||
-      prevMQTTCheck == 0 /* If previous connection was ok */ ||
-      CurrentTime1 - prevMQTTCheck > waitReconnectMQTT /* If waitReconnectMQTT time is passed, try again to connect */)
-    cntMQTTCheck = 0;
-  else if (++cntMQTTCheck >= 5) /* wait until there are 5 times delays */
-    cntMQTTCheck = 0;
-
-  if (cntMQTTCheck == 0)
+  if (hasEthernet)
   {
-//printSerialln("mqtt.loop start");
-    mqtt.loop();
-//printSerialln("mqtt.loop done");
-    unsigned long CurrentTime2 = millis();
+    unsigned long CurrentTime1 = millis();
 
-    if (force)
+    if (force ||
+        prevMQTTCheck == 0 /* If previous connection was ok */ ||
+        CurrentTime1 - prevMQTTCheck > waitReconnectMQTT /* If waitReconnectMQTT time is passed, try again to connect */)
       cntMQTTCheck = 0;
-    else if (CurrentTime2 - CurrentTime1 > maxDurationMQTT) /* if mqtt.loop() took more than 0.9 sec then we assume that no MQTT connection could be established (1 second seems to be the timeout) */
-    {
-      prevMQTTCheck = CurrentTime2;
-      printSerialln("No MQTT...");
-    }
-    else if (prevMQTTCheck != 0)
-    {
-      prevMQTTCheck = 0;
+    else if (++cntMQTTCheck >= 5) /* wait until there are 5 times delays */
       cntMQTTCheck = 0;
-      printSerialln("MQTT restored");
-    }
+
+    if (cntMQTTCheck == 0)
+    {
+  //printSerialln("mqtt.loop start");
+      mqtt.loop();
+  //printSerialln("mqtt.loop done");
+      unsigned long CurrentTime2 = millis();
+
+      if (force)
+        cntMQTTCheck = 0;
+      else if (CurrentTime2 - CurrentTime1 > maxDurationMQTT) /* if mqtt.loop() took more than 0.9 sec then we assume that no MQTT connection could be established (1 second seems to be the timeout) */
+      {
+        prevMQTTCheck = CurrentTime2;
+        printSerialln("No MQTT...");
+      }
+      else if (prevMQTTCheck != 0)
+      {
+        prevMQTTCheck = 0;
+        cntMQTTCheck = 0;
+        printSerialln("MQTT restored");
+      }
+  }
   }  
  
 #endif
