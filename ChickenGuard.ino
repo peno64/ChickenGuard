@@ -113,6 +113,7 @@ const int nMeasures = 5;            // number of measures to do on which an aver
 const int measureEverySeconds = 60; // number of seconds between light measurements and descision if door should be closed or opened
 const int motorClosePin = 4;        // motor turns one way to close the door
 const int motorOpenPin = 5;         // motor turns other way to open the door
+const int motorPWMPin = 44 /* 10 */;         // motor PWM pin: 490 Hz (4 and 13 are 980 Hz but 490 seems to work alot better) - See https://www.arduino.cc/reference/en/language/functions/analog-io/analogwrite/
 const int ledClosedPinInit = 6;
 int ledClosedPin = ledClosedPinInit;// green LED - door closed  D6
 int ledOpenedPin = 7;               // red LED - door open  D7
@@ -126,6 +127,8 @@ const int emptyPin = 12;            // empty switch D12
 
 // ... for this much of milliseconds and then continue closing the door
 const unsigned long waitForInputMaxMs = 900000; // maximum wait time for input (900000 ms = 15 min)
+
+int motorPWM;                       // motor PWM value - See https://www.arduino.cc/reference/en/language/functions/analog-io/analogwrite/
 
 int ldrMorning;                     // light value for door to open
 int ldrEvening;                     // light value for door to close
@@ -144,6 +147,7 @@ struct
 {
   { "ldrMorning", &ldrMorning, 600 },
   { "ldrEvening", &ldrEvening, 40 },
+  { "motorPWM", &motorPWM, 255 }, // 255 = full speed
   { "openMilliseconds", &openMilliseconds, 1100 },
   { "closeMilliseconds", &closeMilliseconds, 3000 },
   { "closeWaitTime1", &closeWaitTime1, 1400 },
@@ -308,6 +312,7 @@ void setup(void)
 
   pinMode(motorClosePin, OUTPUT);
   pinMode(motorOpenPin, OUTPUT);
+  pinMode(motorPWMPin, OUTPUT);
   pinMode(ldrPin, INPUT);
   pinMode(magnetPin, INPUT_PULLUP);
   pinMode(LED_BUILTIN, OUTPUT);
@@ -432,6 +437,8 @@ void MotorOff(void)
 // run the motor in opening direction
 void MotorOpen(void)
 {
+  analogWrite(motorPWMPin, motorPWM); // See https://www.arduino.cc/reference/en/language/functions/analog-io/analogwrite/
+
   digitalWrite(motorClosePin, LOW);
   digitalWrite(motorOpenPin, HIGH);
 
@@ -446,6 +453,8 @@ void MotorOpen(void)
 // run the motor in closing direction
 void MotorClose(void)
 {
+  analogWrite(motorPWMPin, motorPWM);
+
   digitalWrite(motorClosePin, HIGH);
   digitalWrite(motorOpenPin, LOW);
 
@@ -1192,6 +1201,7 @@ void setChangeableValue(char *name, char *svalue)
     {
       value = atoi(svalue);
       *(changeableData[i].variable) = value;
+
 #if defined EEPROMModule
         writeChangeableData();
 #endif      
@@ -1776,22 +1786,25 @@ void setupEthernet()
 {
 #if defined EthernetModule  
   int ret;
-  bool ok;
 
   printSerialln("Start Ethernet");
 
   ret = Ethernet.begin(mac);
-  ok = (ret == 1);
-    
+
+  hasEthernet = (ret == 1);
+  
+  if (!hasEthernet)
+    prevEthernetCheck = millis();
+  else
+    prevEthernetCheck = 0;
+
   printSerial("Done Ethernet: ");
-  printSerial(ok ? "OK" : "NOK: ");
-  if (!ok)
+  printSerial(hasEthernet ? "OK" : "NOK: ");
+  if (!hasEthernet)
     printSerial(ret);
   printSerialln();
   printSerial("IP: ");
   printLocalIP();
-
-  prevEthernetCheck = 0;
 
 #endif
 }
