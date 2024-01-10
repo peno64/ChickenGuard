@@ -113,7 +113,7 @@ const int nMeasures = 5;            // number of measures to do on which an aver
 const int measureEverySeconds = 60; // number of seconds between light measurements and descision if door should be closed or opened
 const int motorClosePin = 4;        // motor turns one way to close the door
 const int motorOpenPin = 5;         // motor turns other way to open the door
-const int motorPWMPin = 44 /* 10 */;         // motor PWM pin: 490 Hz (4 and 13 are 980 Hz but 490 seems to work alot better) - See https://www.arduino.cc/reference/en/language/functions/analog-io/analogwrite/
+const int motorPWMPin = 44;         // motor PWM pin: 490 Hz (4 and 13 are 980 Hz but 490 seems to work alot better) - See https://www.arduino.cc/reference/en/language/functions/analog-io/analogwrite/
 const int ledClosedPinInit = 6;
 int ledClosedPin = ledClosedPinInit;// green LED - door closed  D6
 int ledOpenedPin = 7;               // red LED - door open  D7
@@ -136,7 +136,8 @@ int ldrEvening;                     // light value for door to close
 int openMilliseconds;               // number of milliseconds to open door
 int closeMilliseconds;              // maximal number of milliseconds to close door
 int closeWaitTime1;                 // after this much milliseconds, stop closing door ...
-int closeWaitTime2;    
+int closeWaitTime2;
+int closeWaitTime3;
 
 struct
 {
@@ -152,6 +153,7 @@ struct
   { "closeMilliseconds", &closeMilliseconds, 3000 },
   { "closeWaitTime1", &closeWaitTime1, 1400 },
   { "closeWaitTime2", &closeWaitTime2, 2000 },
+  { "closeWaitTime3", &closeWaitTime3, 30 },
 };
 
 int status = 0;                     // status. 0 = all ok
@@ -228,6 +230,14 @@ void printSerial(char *data)
   Serial.print(data);
 # if defined SERIAL1
     Serial1.print(data);
+# endif
+}
+
+void printSerialInt(int a)
+{
+  Serial.print(a);
+# if defined SERIAL1
+    Serial1.print(a);
 # endif
 }
 
@@ -480,19 +490,25 @@ void Close(void)
     int ElapsedTime = 0;
     unsigned long StartTime = millis();
     bool waited = false;
+    printSerialln("Closing door 1");
     while (!IsClosed() && ElapsedTime < closeMilliseconds)
     {
       unsigned long CurrentTime = millis();
       ElapsedTime = CurrentTime - StartTime; // note that an overflow of millis() is not a problem. ElapsedTime will still be correct
       if (!waited && ElapsedTime >= closeWaitTime1)
       {
+        printSerialln("Closing door 2");
         MotorOff();
         delay(closeWaitTime2);
         waited = true;
         StartTime += closeWaitTime2;
         MotorClose();
+        printSerialln("Closing door 3");
       }
     }
+    printSerial("Closing door 4 (ElapsedTime = ");
+    printSerialInt(ElapsedTime);
+    printSerialln(")");
 
     MotorOff();
 
@@ -508,9 +524,13 @@ void Close(void)
       // sometimes this must be repeated multiple times because the motor rolls back because of the tension of the elastic. Try max 10 times
       for (int i = 0; i < 10 && status != 0; i++)
       {
+        printSerial("Closing door 5 (");
+        printSerialInt(i);
+        printSerialln(")");
+
         MotorClose();
 
-        delay(30); // close only for 30 milliseconds
+        delay(closeWaitTime3); // close only for 30 milliseconds
 
         MotorOff();
 
@@ -523,6 +543,8 @@ void Close(void)
           printSerialln("Door not closed, try again");
       }
     }
+
+    printSerialln("Closing door 6");
 
     SetLEDOff();
 
