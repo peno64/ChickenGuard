@@ -306,7 +306,7 @@ void setup(void)
     Serial1.setTimeout(60000);
 # endif
 
-  printSerialln("Chicken hatch 05/01/2024. Copyright peno");
+  printSerialln("Chicken hatch 11/01/2024. Copyright peno");
 
   setChangeableData();
 
@@ -814,15 +814,6 @@ void loop(void)
 
   unsigned long CurrentTime = millis();
 
-#if defined NTPModule
-  if (CurrentTime - PrevSyncTime >= SyncTime)
-  {
-    PrevSyncTime = CurrentTime;
-
-    SyncDateTime();
-  }
-#endif
-
   if (CurrentTime - PrevTime >= 1000) // every second
   {
     PrevTime = CurrentTime;
@@ -877,6 +868,15 @@ void loop(void)
       measureEverySecond = measureEverySeconds;
     }
   }
+
+#if defined NTPModule
+  if (CurrentTime - PrevSyncTime >= SyncTime)
+  {
+    PrevSyncTime = CurrentTime;
+
+    SyncDateTime();
+  }
+#endif
 }
 
 void ProcessWater()
@@ -1419,6 +1419,9 @@ void Command(String answer, bool wait, bool start)
       setChangeableValue(variable, value);
       showChangeableData(variable);
     }
+
+    if (logit && wait)
+      WaitForInput("Press enter to continue");    
   }
 
   else if (answer.substring(0, 3) == "GET")
@@ -1435,6 +1438,9 @@ void Command(String answer, bool wait, bool start)
         *ptr = 0;
     } 
     showChangeableData(variable);
+
+    if (logit && wait)
+      WaitForInput("Press enter to continue");    
   }
 
   else if (answer.substring(0, 1) == "L") // log toggle
@@ -1492,6 +1498,7 @@ void Command(String answer, bool wait, bool start)
   else if (answer.substring(0, 2) == "IP")
   {
     printLocalIP();
+
     if (logit && wait)
       WaitForInput("Press enter to continue");
   }
