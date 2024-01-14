@@ -306,7 +306,7 @@ void setup(void)
     Serial1.setTimeout(60000);
 # endif
 
-  printSerialln("Chicken hatch 11/01/2024. Copyright peno");
+  printSerialln("Chicken hatch 14/01/2024. Copyright peno");
 
   setChangeableData();
 
@@ -1941,6 +1941,9 @@ void setupMQTT()
     device.setName("Chickenguard");
     device.setSoftwareVersion("1.0.0");
 
+    device.enableSharedAvailability();
+    device.enableLastWill();    
+
     // for icons,
     // see https://pictogrammers.com/library/mdi/
 
@@ -2041,7 +2044,7 @@ void loopMQTT(bool force)
         cntMQTTCheck = 0;
         printSerialln("MQTT restored");
       }
-  }
+    }
   }  
  
 #endif
