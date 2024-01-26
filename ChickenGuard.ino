@@ -80,7 +80,7 @@
 #define MQTTModule                  // If defined then compile with MQTT support - can be used via Home Assistant
 #define NTPModule                   // If defined then get internet time
 #define EEPROMModule                // If defined then store data in EEPROM
-#define SERIAL1                     // If defined then also communicate via Serial1
+#define SERIAL1                     // If defined then also communicate via Serial1 (Bluetooth in my case)
 //#define CONTROLBUILTIN              // If set then set the BUILTIN LED
 
 #if !defined EthernetModule
@@ -93,6 +93,7 @@
 /*
 
 Following must be added to configuration.yaml of HA:
+If not, too much events are logged in the logbook
 
 logbook:
   exclude:
