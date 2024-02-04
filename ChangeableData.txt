@@ -1,0 +1,17 @@
+Elastic:
+
+motorPWM = 190
+openMilliseconds = 1250
+closeMilliseconds = 5000
+closeWaitTime1 = 2200
+closeWaitTime2 = 4000
+closeWaitTime3 = 30
+
+Cord:
+
+motorPWM = 190
+openMilliseconds = 1250
+closeMilliseconds = 4000
+closeWaitTime1 = 10000
+closeWaitTime2 = 4000
+closeWaitTime3 = 40
