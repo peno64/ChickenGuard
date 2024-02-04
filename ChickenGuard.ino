@@ -307,7 +307,7 @@ void setup(void)
     Serial1.setTimeout(60000);
 # endif
 
-  printSerialln("Chicken hatch 14/01/2024. Copyright peno");
+  printSerialln("Chicken hatch 04/02/2024. Copyright peno");
 
   setChangeableData();
 
@@ -1572,8 +1572,8 @@ void Command(String answer, bool wait, bool start)
     printSerialln("IS: Show Ethernet status");
 #endif
     printSerialln("RESET: Reset Arduino");
-    printSerialln("LET name=value");
-    printSerialln("GET {name}");
+    printSerialln("LET name=value: Set variable value");
+    printSerialln("GET {name}: Get variable value");
     if (start)
       printSerialln("START: Start loop");
 
