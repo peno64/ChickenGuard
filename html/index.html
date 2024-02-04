@@ -11,59 +11,52 @@
 
 <big>
 <pre>
-Opens and closes the chicken door in the morning and evening.
-A light sensor is used to determine when it is openen and closed.
-However also a clock module (DS3231) can be attached to not open the door before a given time.
-This for the summertime to not open it too soon. Early in the morning when there is already light but not many people are awake the preditors are still around...
-But even without that clock module it is possible to work on time via the timer from the arduino.
-Unfortunately this timer is not very acurate and after a couple of days it is already seconds out of sync.
-For this to work, the current time must be provided each time the arduino resets.
-This is not the case with the timer module because it works on its own and it even has a battery to keep the time when power is disconnected.
-So for that timer module the date/time must only be set once.
+- Opens and closes the chicken door in the morning and evening. A status LED (green/red) indicates the door status.
+- Monitors the drinkable water level, with a status LED (green/red) indicating the water level.
+- Logs information and sends commands via the serial monitor, USB, and optionally the HC-05 bluetooth module.
+- Connects to the internet to log information and send commands via MQTT, which can be set up in Home Assistant.
+- Allows the addition of a clock module DS3231 to prevent the door from opening before a certain time. The clock adjusts for summer/winter time and periodically syncs with internet time if available.
+- Even without a clock module, setting date/time is possible, especially when connected to the internet, ensuring synchronization at each startup and regular intervals.
 
-Two leds also show if the door is (about to) open or closed and also to show if there is an error.
-When the door is open, the red led is on. When the door is closed, the green led is on.
-The colors are chosen as such because green means the chickens are safe and red means they are unsafe.
-I chose for a 2-in-one led (with 3 connections)
+A light sensor determines when the door opens and closes, but it won't open before a specified time, particularly during summertime when predators may be active early in the morning.
+Even without a clock module, setting date/time is possible, especially when connected to the internet, ensuring synchronization at each startup and regular intervals.
+A light sensor determines when the door opens and closes, but it won't open before a specified time, particularly during summertime when predators may be active early in the morning.
+Even without the clock module, the system can still operate based on time using the Arduino timer, especially when connected to the internet.
+In the absence of an internet connection, the current time must be provided each time the Arduino resets.
 
-A minute or two before the opening/closing the red or green led starts to blink every second to indicate the event is about to happen.
+The system uses a light sensor, and a 3-way switch at the light detector allows for different modes, including immediate door closure or opening based on the LDR connection.
 
-When it is dark and thus the door should be closed, the system checks every second if the magnetic switch still says that the door is closed.
-If not, then it closes the door again. This in case an agressor tries to open the door (by pulling it).
+Two LEDs indicate whether the door is (about to) open or close and also show error status.
+A blinking pattern of the red LED signifies an error, which can be reset by switching the switch between immediate close and open within 5 seconds.
 
-If the door is closed manually during the day (for example because the chickens may not enter or exit the henhouse), the system will not run the motor anymore to open or close
-the door until the door is manually opened again. This must of course be done during light when the door is supposed to be open.
-Also the leds will not change anymore until the door is opened again.
-Opening the door again can then be done during light or dark.
-In dark, the door will then close again via the motor and when light the door will stay open until it becomes dark.
+Upon powering on, the system waits for commands for the first minute, and commands can be entered anytime thereafter.
+There are manual commands to open and close the door, and the system determines whether to keep it closed or open based on the light conditions.
 
-If there is an error, the red led will blink as many times as the error status and then two seconds off and then blink again.
+The trap door's design, similar to a medieval castle door, employs an elastic on the outside to assist in opening the door initially.
+Make sure the door is not closed and there is enough light during the initial setup to allow for proper system configuration.
 
-When power is switched on, the first minute nothing will happen and the system waits for commands you can enter.
-Each time a command is given, the minute starts again. There are commands to manually open and close the door, doing this repeatingly, ... H gives a help screen.
+In normal operation, commands can still be given, and logging can be adjusted using the 'L' command.
 
-Then it starts with first closing the door (if it is not closed yet) and then depending on the light it stays closed (night) or opens (day).
-This is done as such because a magnet switch can detect if the door is closed. When the magnet is not at the switch, the door is (possible only partially) open.
-As such the system knows after this exactly if the door is open or closed.
-So closing the door is done until the magnet switch says it is closed but there is also a timer to make sure the motor doesn't stay on if something goes wrong and then the system goes into error
-Opening the door is done with a timer because the system has no detector if it is completely open. It is not a problem if the motor runs a bit longer because this means only that the cable is looser.
-Note that not a hard cable is used on the door but an elastic. That way when the door is closed there is some elastic on the cable.
-Also when the system detects that the door is closed it will close it again for a couple of milliseconds to tighten it extra.
-This is tried max 10 times because it can happen that the motor cannot hold the force and returns a bit but it practice most of the time only 1 time must be tried.
-Since my door is a trap door (like a medieval castle), also an elastic is on the outside to pull it open the first centimeters (and then gravity takes over).
-I use an elastic used for bicycles to hold things on the rack.
+The 'H' command provides a help screen with all available commands.
 
-Make sure that the door is not closed and that there is enough light (daytime) the first time the system is taken into operation.
-That will make the system setup automatically properly. The ax will turn one way or another and eventually wind up the elastic and close the door.
-To open it, the motor will turn the other way and thus unwind the elastic.
+Note that by default, the Arduino resets when the monitor is started (Ctrl Shift M), causing a loss of variables.
+This can be addressed by using a capacitor between the reset pin and ground.
+A second reason why a capacitor is used is to ensure that a reset is performed when power is applied.
+This is necessary for the Ethernet shield I have. Newer versions do not require this reset, but I have an older version that needs a reset at every start.
 
-Also when in normal operation commands can still be given. Note that the first minute alot is shown in the output but once in normal operation there is no much logging anymore.
-This can be changed by the L command. Again, the H command shows a help screen with all the commands.
+Ensure the capacitor is disconnected when uploading a new sketch.
+Otherwise you get an error that it could not upload. I use a small switch to do that.
 
-Note also that by default de arduino resets when the monitor is started (Ctrl Shift M)
-So you also loose all your variables :-(
-This can be fixed with a condensator between the reset pin and gnd. I have used a 0.47 µF and this works fine.
-However note that it must be disconnected when a new sketch is uploaded. Otherwise you get an error that it could not upload. I use a small switch to do that.
+In addition to controlling the door, the system monitors the water level with two water level switches indicating if the water is close to empty or completely empty.
+When the LED is green, the water level is okay. When it blinks green/red, the water is almost empty, and when it blinks red, the water level is completely empty.
+
+When SERIAL1 is defined, communication can be done via Serial1, enabling connection with a Bluetooth HC-05 module.
+
+If EEPROMModule is defined, some data is written to EEPROM to prevent data loss upon restart.
+
+If EthernetModule is defined and the Arduino is connected to Ethernet, two extra modules become available: MQTTModule for sending MQTT messages to/from the Arduino and NTPModule for synchronizing date/time with internet time.
+
+When MQTT is enabled, the system can be monitored via Home Assistant, adding a convenient touch to this chicken guard.
 </pre>
 
 <img src="DoorOpenOutside.jpg" width=500 alt="Open door outside"><br>
