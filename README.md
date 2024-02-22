@@ -47,3 +47,4 @@ If EthernetModule is defined and the Arduino is connected to Ethernet, two extra
 
 When MQTT is enabled, the system can be monitored via Home Assistant, adding a convenient touch to this chicken guard.
 
+![alt text](HA.jpg)
