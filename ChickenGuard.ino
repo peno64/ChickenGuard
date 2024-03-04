@@ -1887,7 +1887,7 @@ void printEthernetStatus()
 #endif  
 }
 
-#if defined MQTTModule
+#if defined  MQTTModule
 
 // See https://github.com/dawidchyrzynski/arduino-home-assistant/
 // See https://dawidchyrzynski.github.io/arduino-home-assistant/documents/getting-started/index.html
