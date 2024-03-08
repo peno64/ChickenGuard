@@ -85,6 +85,12 @@ logbook:
 
 #endif
 
+/* Up time */
+unsigned int uptimeDays = 0;
+unsigned char uptimeHours = 0;
+unsigned char uptimeMinutes = 0;
+unsigned char uptimeSeconds = 0;
+
 const int ldrOpenNow = 1020;        // light value for door open now
 const int ldrCloseNow = 0;          // light value for door close now
 
@@ -118,23 +124,6 @@ int closeWaitTime1;                 // after this much milliseconds, stop closin
 int closeWaitTime2;
 int closeWaitTime3;
 
-struct
-{
-  char *name;
-  int *variable;
-  int initialValue;
-} changeableData[] = 
-{
-  { "ldrMorning", &ldrMorning, 600 },
-  { "ldrEvening", &ldrEvening, 40 },
-  { "motorPWM", &motorPWM, 255 }, // 255 = full speed
-  { "openMilliseconds", &openMilliseconds, 1100 },
-  { "closeMilliseconds", &closeMilliseconds, 3000 },
-  { "closeWaitTime1", &closeWaitTime1, 1400 },
-  { "closeWaitTime2", &closeWaitTime2, 2000 },
-  { "closeWaitTime3", &closeWaitTime3, 30 },
-};
-
 int status = 0;                     // status. 0 = all ok
 int toggle = 0;                     // led blinking toggle
 bool logit = false;                 // log to monitor
@@ -154,13 +143,13 @@ const byte startMinuteOpen = 0;     // minimum minute that door may open
 bool hasClockModule = false;        // Is the clock module detected
 
 #if defined ClockModule
-byte hourOpened = 0;                // hour of last door open
-byte minuteOpened = 0;              // minute of last door open
-byte secondOpened = 0;              // second of last door open
+int hourOpened = 0;                 // hour of last door open
+int minuteOpened = 0;               // minute of last door open
+int secondOpened = 0;               // second of last door open
 
-byte hourClosed = 0;                // hour of last door close
-byte minuteClosed = 0;              // hour of last door close
-byte secondClosed = 0;              // hour of last door close
+int hourClosed = 0;                 // hour of last door close
+int minuteClosed = 0;               // hour of last door close
+int secondClosed = 0;               // hour of last door close
 #else
 unsigned long msTime = 0;           // millis() value of set time
 int dayTime = 0;                    // set day at msTime
@@ -198,6 +187,31 @@ bool blinkEmpty;                    // blink for (almost) empty
 unsigned long PrevSyncTime;         // previous time a sync was done
 
 #define SyncTime 30 * (24 * 60 * 60 * 1000) // sync every x days
+
+struct
+{
+  char *name;
+  int *variable;
+  int initialValue;
+} changeableData[] = 
+{
+  { "ldrMorning", &ldrMorning, 600 },
+  { "ldrEvening", &ldrEvening, 40 },
+  { "motorPWM", &motorPWM, 255 }, // 255 = full speed
+  { "openMilliseconds", &openMilliseconds, 1100 },
+  { "closeMilliseconds", &closeMilliseconds, 3000 },
+  { "closeWaitTime1", &closeWaitTime1, 1400 },
+  { "closeWaitTime2", &closeWaitTime2, 2000 },
+  { "closeWaitTime3", &closeWaitTime3, 30 },
+#if defined ClockModule  
+  { "hourOpened", &hourOpened, 0 },
+  { "minuteOpened", &minuteOpened, 0 },
+  { "secondOpened", &secondOpened, 0 },
+  { "hourClosed", &hourClosed, 0 },
+  { "minuteClosed", &minuteClosed, 0 },
+  { "secondClosed", &secondClosed, 0 },
+#endif  
+};
 
 void(* resetFunc) (void) = 0;       //declare reset function at address 0
 
@@ -285,7 +299,7 @@ void setup(void)
     Serial1.setTimeout(60000);
 # endif
 
-  printSerialln("Chicken hatch 04/02/2024. Copyright peno");
+  printSerialln("Chicken hatch 06/03/2024. Copyright peno");
 
   setChangeableData();
 
@@ -398,11 +412,13 @@ void setup(void)
 
   measureEverySecond = measureEverySeconds;
   PrevTime = PrevSyncTime = millis();
+
+  uptimeDays = uptimeHours = uptimeMinutes = uptimeSeconds = 0;
 }
 
 void SetStatusLed(bool on)
 {
-#if CONTROLBUILTIN
+#if defined CONTROLBUILTIN
   if (on)
     digitalWrite(LED_BUILTIN, HIGH);
   else
@@ -433,7 +449,12 @@ void MotorOpen(void)
 
 #if defined ClockModule
   if (hasClockModule)
+  {
     readDS3231time(&secondOpened, &minuteOpened, &hourOpened, NULL, NULL, NULL, NULL);
+#   if defined EEPROMModule    
+      writeChangeableData();
+#   endif      
+  }
 #else
   msOpened = millis();
 #endif
@@ -449,7 +470,12 @@ void MotorClose(void)
 
 #if defined ClockModule
   if (hasClockModule)
+  {
     readDS3231time(&secondClosed, &minuteClosed, &hourClosed, NULL, NULL, NULL, NULL);
+#   if defined EEPROMModule
+      writeChangeableData();
+#   endif
+  }
 #else
   msClosed = millis();
 #endif
@@ -698,9 +724,9 @@ int ProcessDoor(bool mayOpen)
   bool isClosed = IsClosed();
 
 #if defined ClockModule
-  static byte hourOpened2 = 0;                // hour of last door open
-  static byte minuteOpened2 = 0;              // minute of last door open
-  static byte secondOpened2 = 0;              // second of last door open
+  static int hourOpened2 = 0;                // hour of last door open
+  static int minuteOpened2 = 0;              // minute of last door open
+  static int secondOpened2 = 0;              // second of last door open
 
   if (isClosed)
     hourOpened2 = minuteOpened2 = secondOpened2 = 0;
@@ -772,7 +798,7 @@ int ProcessDoor(bool mayOpen)
 // Check if the current time is later than the may open time - deltaMinutes
 bool MayOpen(int deltaMinutes)
 {
-  byte hour, minute, second;
+  int hour, minute, second;
   GetTime(hour, minute, second);
 
   int startHourOpen1 = startHourOpen;
@@ -796,6 +822,22 @@ void loop(void)
   if (CurrentTime - PrevTime >= 1000) // every second
   {
     PrevTime = CurrentTime;
+
+    if (++uptimeSeconds == 60)
+    {
+      uptimeSeconds = 0;
+      if (++uptimeMinutes == 60)
+      {
+        uptimeMinutes = 0;
+        if (++uptimeHours == 24)
+        {
+          uptimeHours = 0;
+          uptimeDays++;
+        }
+      }
+    }
+
+    setUpTime();
 
 #if defined NTPModule
     //printNTP();
@@ -928,7 +970,7 @@ void info(int measureEverySecond, char *buf)
   if (hasClockModule)
   {
 #if defined ClockModule
-    byte second, minute, hour;
+    int second, minute, hour;
     // retrieve data from DS3231
     readDS3231time(&second, &minute, &hour, NULL, NULL, NULL, NULL);
     strcat(buf, ", Time now: ");
@@ -972,7 +1014,7 @@ void info(int measureEverySecond, bool dolog)
 }
 
 #if defined ClockModule
-void ShowTime(byte *hour, byte *minute, byte *second, char *buf)
+void ShowTime(int *hour, int *minute, int *second, char *buf)
 {
   char *buffer[10];
   
@@ -987,13 +1029,13 @@ void ShowTime(byte *hour, byte *minute, byte *second, char *buf)
     printSerial(buf);
 }
 
-void ShowTime(byte *hour, byte *minute, byte *second)
+void ShowTime(int *hour, int *minute, int *second)
 {
   ShowTime(hour, minute, second, NULL);
 }
 #endif
 
-void GetTime(byte &hour, byte &minute, byte &second)
+void GetTime(int &hour, int &minute, int &second)
 {
   minute = 0;
   hour = 24;
@@ -1205,7 +1247,7 @@ void setChangeableValue(char *name, char *svalue)
 
 #if defined EEPROMModule
         writeChangeableData();
-#endif      
+#endif
       found = true;
       break;
     }
@@ -1581,7 +1623,8 @@ int daysInMonth(int year, int month)
 
 void DSTCorrection()
 {
-  byte second, minute, hour, dayOfWeek, dayOfMonth, month, year;
+  int second, minute, hour;
+  byte dayOfWeek, dayOfMonth, month, year;
 
 #if defined ClockModule
   if (hasClockModule)
@@ -1682,12 +1725,12 @@ byte bcdToDec(byte val)
 bool InitClock()
 {
   Wire.begin();
-  byte sec, minute, hour;
+  int sec, minute, hour;
   readDS3231time(&sec, &minute, &hour, NULL, NULL, NULL, NULL);
   return sec < 60 && minute < 60 && hour < 24;
 }
 
-void setDS3231time(byte second, byte minute, byte hour, byte dayOfWeek, byte dayOfMonth, byte month, byte year)
+void setDS3231time(int second, int minute, int hour, byte dayOfWeek, byte dayOfMonth, byte month, byte year)
 {
   if (dayOfWeek == 0)
     dayOfWeek = dayofweek(2000 + year, month, dayOfMonth) + 1;
@@ -1704,9 +1747,9 @@ void setDS3231time(byte second, byte minute, byte hour, byte dayOfWeek, byte day
   Wire.endTransmission();
 }
 
-void readDS3231time(byte *second,
-                    byte *minute,
-                    byte *hour,
+void readDS3231time(int *second,
+                    int *minute,
+                    int *hour,
                     byte *dayOfWeek,
                     byte *dayOfMonth,
                     byte *month,
@@ -1743,7 +1786,8 @@ void readDS3231time(byte *second,
 
 void printDS3231time()
 {
-  byte second, minute, hour, dayOfWeek, dayOfMonth, month, year;
+  int second, minute, hour;
+  byte dayOfWeek, dayOfMonth, month, year;
   char data[30];
   
   readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
@@ -1909,6 +1953,7 @@ HASensor chickenguardDoorStatus("chickenguardDoorStatus");
 HASensorNumber chickenguardLDR("ChickenguardLDR");
 HASensorNumber chickenguardLDRavg("ChickenguardLDRAverage");
 HASensorNumber chickenguardTemperature("ChickenguardTemperature", HASensorNumber::PrecisionP1);
+HASensor chickenguardUpTime("chickenguardUpTime");
 HASensor chickenguardTimeNow("chickenguardTimeNow");
 HASensor chickenguardTimeOpened("chickenguardTimeOpened");
 HASensor chickenguardTimeClosed("chickenguardTimeClosed");
@@ -1938,6 +1983,9 @@ void setupMQTT()
     chickenguardTemperature.setIcon("mdi:thermometer");
     chickenguardTemperature.setName("Temperature");
     chickenguardTemperature.setUnitOfMeasurement("°C"); // Also results in no logging in logbook HA
+
+    chickenguardUpTime.setIcon("mdi:timer-edit-outline");
+    chickenguardUpTime.setName("Uptime");
 
     chickenguardTimeNow.setIcon("mdi:clock-outline");
     chickenguardTimeNow.setName("Time Now");
@@ -2061,7 +2109,7 @@ void setMQTTTime()
 {
 #if defined MQTTModule
   char buf[10];
-  byte second, minute, hour;
+  int second, minute, hour;
 
 #if defined ClockModule
   // retrieve data from DS3231
@@ -2110,6 +2158,16 @@ void setMQTTWaterStatus(char *msg)
 #if defined MQTTModule
   chickenguardWaterStatus.setValue(msg);
 #endif
+}
+
+void setUpTime()
+{
+#if defined MQTTModule  
+  char buf[50];
+
+  sprintf(buf, "%u:%02d:%02d:%02d", uptimeDays, (int)uptimeHours, (int)uptimeMinutes, (int)uptimeSeconds);
+  chickenguardUpTime.setValue(buf);
+#endif  
 }
 
 #if defined NTPModule
