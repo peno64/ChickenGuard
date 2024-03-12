@@ -1538,9 +1538,7 @@ void Command(String answer, bool wait, bool start)
 
     info(-1, (char *) buf);
 
-    strcat(buf, "\r\n");
-
-    strcat(buf, "Measurements:");
+    strcat(buf, "\r\nMeasurements:");
     int measureIndex0 = measureIndex;
     for (int counter = nMeasures - 1; counter >= 0; counter--)
     {
