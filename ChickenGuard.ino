@@ -193,7 +193,7 @@ struct
   char *name;
   int *variable;
   int initialValue;
-} changeableData[] = 
+} changeableData[] =
 {
   { "ldrMorning", &ldrMorning, 600 },
   { "ldrEvening", &ldrEvening, 40 },
@@ -203,14 +203,14 @@ struct
   { "closeWaitTime1", &closeWaitTime1, 1400 },
   { "closeWaitTime2", &closeWaitTime2, 2000 },
   { "closeWaitTime3", &closeWaitTime3, 30 },
-#if defined ClockModule  
+#if defined ClockModule
   { "hourOpened", &hourOpened, 0 },
   { "minuteOpened", &minuteOpened, 0 },
   { "secondOpened", &secondOpened, 0 },
   { "hourClosed", &hourClosed, 0 },
   { "minuteClosed", &minuteClosed, 0 },
   { "secondClosed", &secondClosed, 0 },
-#endif  
+#endif
 };
 
 void(* resetFunc) (void) = 0;       //declare reset function at address 0
@@ -299,7 +299,7 @@ void setup(void)
     Serial1.setTimeout(60000);
 # endif
 
-  printSerialln("Chicken hatch 06/03/2024. Copyright peno");
+  printSerialln("Chicken hatch 06/04/2024. Copyright peno");
 
   setChangeableData();
 
@@ -324,7 +324,7 @@ void setup(void)
   digitalWrite(ledOpenedPin, LOW);
   pinMode(ledClosedPin, OUTPUT);
   digitalWrite(ledClosedPin, LOW);
-  
+
   pinMode(ledNotEmptyPin, OUTPUT);
   digitalWrite(ledNotEmptyPin, LOW);
   pinMode(ledEmptyPin, OUTPUT);
@@ -338,7 +338,7 @@ void setup(void)
 
 # if defined MQTTModule
     printSerialln("MQTT enabled");
-    
+
     setupMQTT();
 
     loopEthernet();
@@ -358,7 +358,7 @@ void setup(void)
 
 # if !defined ClockModule
     SyncDateTime();
-# endif  
+# endif
 #else
   printSerialln("NTP module not enabled");
 #endif
@@ -451,9 +451,9 @@ void MotorOpen(void)
   if (hasClockModule)
   {
     readDS3231time(&secondOpened, &minuteOpened, &hourOpened, NULL, NULL, NULL, NULL);
-#   if defined EEPROMModule    
+#   if defined EEPROMModule
       writeChangeableData();
-#   endif      
+#   endif
   }
 #else
   msOpened = millis();
@@ -620,16 +620,16 @@ void LightMeasurement(bool init)
   else
   {
     counter = 1;
-    
+
     if (ldr > ldrCloseNow && ldr < ldrOpenNow)
     {
       int i;
       for (i = 1; i < nMeasures && lightMeasures[i] == lightMeasures[0]; i++);
-      if (i >= nMeasures && (lightMeasures[0] <= ldrCloseNow || lightMeasures[0] >= ldrOpenNow))  
+      if (i >= nMeasures && (lightMeasures[0] <= ldrCloseNow || lightMeasures[0] >= ldrOpenNow))
         counter = nMeasures;
     }
   }
-  
+
   for (; counter >= 1; counter--)
   {
     //do a light measure
@@ -677,8 +677,8 @@ void checkReset(bool open)
   if (timeNow == 0)
     timeNow++;
 
-  if (timePrevReset != 0 && 
-      open != openPrevReset && 
+  if (timePrevReset != 0 &&
+      open != openPrevReset &&
       timeNow - timePrevReset < 5000)
   {
     isClosedByMotor = IsClosed();
@@ -707,20 +707,20 @@ int ProcessDoor(bool mayOpen)
   if (ldr <= ldrCloseNow || keepClosed)
   {
     checkReset(false);
-    
+
     average = 0;
     LightMeasurement(true); // fill the whole light measurement array with the current light value
   }
   else if (ldr >= ldrOpenNow || keepOpen)
   {
     checkReset(true);
-    
+
     average = ldrOpenNow;
     LightMeasurement(true); // fill the whole light measurement array with the current light value
   }
   else
     timePrevReset = 0;
-  
+
   bool isClosed = IsClosed();
 
 #if defined ClockModule
@@ -739,7 +739,7 @@ int ProcessDoor(bool mayOpen)
   if (status != 0)
   {
     char data[100];
-    
+
     sprintf(data, "Something is not ok (%d - %s); idle", status, ptr);
     printSerialln(data);
 #if defined ClockModule
@@ -749,7 +749,7 @@ int ProcessDoor(bool mayOpen)
     printSerial(" Time actually open: ");
     ShowTime(&hourOpened2, &minuteOpened2, &secondOpened2);
     printSerialln();
-#endif    
+#endif
   }
 
   else if (isClosed && !isClosedByMotor)
@@ -843,7 +843,7 @@ void loop(void)
     //printNTP();
 #endif
 
-    ProcessWater();    
+    ProcessWater();
 
     measureEverySecond--;
 
@@ -895,7 +895,7 @@ void loop(void)
   {
     PrevSyncTime = CurrentTime;
 
-    SyncDateTime();
+    //SyncDateTime();
   }
 #endif
 }
@@ -930,8 +930,8 @@ void ProcessWater()
   printSerialln(digitalRead(almostEmptyPin));
 
   printSerial("Empty: ");
-  printSerialln(digitalRead(emptyPin));  
-#endif  
+  printSerialln(digitalRead(emptyPin));
+#endif
 }
 
 void SetLEDOff()
@@ -954,7 +954,7 @@ void SetLEDOpenClosed()
   }
 }
 
-void info(int measureEverySecond, char *buf)
+void info(int measureEverySecond, bool withDayOfWeek, char *buf)
 {
   if (measureEverySecond >= 0)
     sprintf(buf + strlen(buf), "%d: ", measureEverySecond);
@@ -971,10 +971,11 @@ void info(int measureEverySecond, char *buf)
   {
 #if defined ClockModule
     int second, minute, hour;
+    byte dayOfWeek;
     // retrieve data from DS3231
-    readDS3231time(&second, &minute, &hour, NULL, NULL, NULL, NULL);
+    readDS3231time(&second, &minute, &hour, &dayOfWeek, NULL, NULL, NULL);
     strcat(buf, ", Time now: ");
-    ShowTime(&hour, &minute, &second, buf + strlen(buf));
+    ShowTime(&hour, &minute, &second, withDayOfWeek ? &dayOfWeek : NULL, buf + strlen(buf));
 
     strcat(buf, ", Time open: ");
     ShowTime(&hourOpened, &minuteOpened, &secondOpened, buf + strlen(buf));
@@ -983,7 +984,7 @@ void info(int measureEverySecond, char *buf)
     ShowTime(&hourClosed, &minuteClosed, &secondClosed, buf + strlen(buf));
 #endif
   }
-#if !defined ClockModule    
+#if !defined ClockModule
   else
   {
     unsigned long timeNow = millis();
@@ -1006,7 +1007,7 @@ void info(int measureEverySecond, bool dolog)
   {
     char buf[255] = { 0 };
 
-    info(measureEverySecond, (char *) buf);
+    info(measureEverySecond, false, (char *) buf);
 
     printSerialln(buf);
     setMQTTMonitor(buf);
@@ -1014,19 +1015,26 @@ void info(int measureEverySecond, bool dolog)
 }
 
 #if defined ClockModule
-void ShowTime(int *hour, int *minute, int *second, char *buf)
+void ShowTime(int *hour, int *minute, int *second, byte *dayOfWeek, char *buf)
 {
-  char *buffer[10];
-  
+  char *buffer[15];
+
   if (buf == NULL)
     buf = (char *)buffer;
 
   sprintf(buf, "%d:%02d", *hour, *minute);
   if (second != NULL)
     sprintf(buf + strlen(buf), ":%02d", *second);
+  if (dayOfWeek != NULL)
+    sprintf(buf + strlen(buf), " (%d)", *dayOfWeek);
 
   if (buf == buffer)
     printSerial(buf);
+}
+
+void ShowTime(int *hour, int *minute, int *second, char *buf)
+{
+  ShowTime(hour, minute, second, NULL, buf);
 }
 
 void ShowTime(int *hour, int *minute, int *second)
@@ -1046,7 +1054,7 @@ void GetTime(int &hour, int &minute, int &second)
     readDS3231time(&second, &minute, &hour, NULL, NULL, NULL, NULL);
 #endif
   }
-#if !defined ClockModule  
+#if !defined ClockModule
   else if (msTime != 0)
   {
     unsigned long timeNow = millis();
@@ -1163,7 +1171,7 @@ void ShowTime(unsigned long time, unsigned long timeNow, char *buf)
     else
       strcat(buf, "-");
   }
-  
+
   if (buf == data)
     printSerial(buf);
 }
@@ -1194,7 +1202,7 @@ String WaitForInput(char *question)
   return ElapsedTime < waitForInputMaxMs ?
           Serial.available() ?
           Serial.readStringUntil(10) :
-# if defined SERIAL1          
+# if defined SERIAL1
           Serial1.readStringUntil(10)
 # else
           ""
@@ -1279,7 +1287,7 @@ void Command(String answer, bool wait, bool start)
   {
 #if !defined ClockModule
     if (answer[2])
-    {      
+    {
       int day = answer.substring(2, 4).toInt();
       int month = answer.substring(5, 7).toInt();
       int year = answer.substring(8, 10).toInt();
@@ -1303,7 +1311,7 @@ void Command(String answer, bool wait, bool start)
     byte second, minute, hour, dayOfMonth, month, year;
     char data[30];
     unsigned long timeNow = millis();
-    
+
     GetTime(timeNow, timeNow, year, month, dayOfMonth, hour, minute, second);
 
     sprintf(data, "%02d/%02d/%02d %02d:%02d:%02d", (int)dayOfMonth,  (int)month, (int)year, (int)hour, (int)minute, (int)second);
@@ -1400,7 +1408,7 @@ void Command(String answer, bool wait, bool start)
       printSerialln("LEDs switched");
       setMQTTMonitor("LEDs switched");
     }
-    
+
     if (logit && wait)
       WaitForInput("Press enter to continue");
   }
@@ -1408,8 +1416,8 @@ void Command(String answer, bool wait, bool start)
 #if defined NTPModule
   else if (answer.substring(0, 4) == "SYNC")
   {
-    SyncDateTime();    
-    
+    SyncDateTime();
+
     if (logit && wait)
       WaitForInput("Press enter to continue");
   }
@@ -1421,7 +1429,7 @@ void Command(String answer, bool wait, bool start)
 
     while (*variable == ' ')
       variable++;
-    for (ptr = variable; *ptr && *ptr != '='; ptr++);    
+    for (ptr = variable; *ptr && *ptr != '='; ptr++);
     if (*ptr)
     {
       *ptr = 0;
@@ -1436,13 +1444,13 @@ void Command(String answer, bool wait, bool start)
       ptr = value + strlen(value);
       while (--ptr >= value && *ptr == ' ')
         *ptr = 0;
-      
+
       setChangeableValue(variable, value);
       showChangeableData(variable);
     }
 
     if (logit && wait)
-      WaitForInput("Press enter to continue");    
+      WaitForInput("Press enter to continue");
   }
 
   else if (answer.substring(0, 3) == "GET")
@@ -1457,11 +1465,11 @@ void Command(String answer, bool wait, bool start)
       ptr = variable + strlen(variable);
       while (--ptr >= variable && *ptr == ' ')
         *ptr = 0;
-    } 
+    }
     showChangeableData(variable);
 
     if (logit && wait)
-      WaitForInput("Press enter to continue");    
+      WaitForInput("Press enter to continue");
   }
 
   else if (answer.substring(0, 1) == "L") // log toggle
@@ -1475,7 +1483,7 @@ void Command(String answer, bool wait, bool start)
   {
     status = answer.substring(1).toInt();
   }
-  
+
   else if (answer.substring(0, 5) == "RESET") // reset
   {
     resetFunc(); //call reset
@@ -1536,7 +1544,7 @@ void Command(String answer, bool wait, bool start)
   {
     char buf[512] = { 0 };
 
-    info(-1, (char *) buf);
+    info(-1, true, (char *) buf);
 
     strcat(buf, "\r\nMeasurements:");
     int measureIndex0 = measureIndex;
@@ -1554,9 +1562,9 @@ void Command(String answer, bool wait, bool start)
     strcat(buf, "\r\n");
 
     sprintf(buf + strlen(buf), "@ Min: %d, Max: %d", ldrMinimum, ldrMaximum);
-    
-    printSerialln(buf);    
-    
+
+    printSerialln(buf);
+
     setMQTTMonitor(buf);
 
     if (logit && wait)
@@ -1575,7 +1583,7 @@ void Command(String answer, bool wait, bool start)
     printSerialln("SL: Switch LEDs");
 #if !defined ClockModule
     printSerialln("AT<dd/mm/yy hh:mm:ss>: set arduino timer date/time");
-#endif      
+#endif
 #if defined ClockModule
     printSerialln("CT<dd/mm/yy hh:mm:ss>: Set clockmodule date/time");
 #endif
@@ -1630,12 +1638,12 @@ void DSTCorrection()
   else
 #endif
   {
-#if !defined ClockModule    
+#if !defined ClockModule
     unsigned long timeNow = millis();
 
     GetTime(timeNow, timeNow, year, month, dayOfMonth, hour, minute, second);
     dayOfWeek = dayofweek(2000 + year, month, dayOfMonth) + 1;
-#endif    
+#endif
   }
 
   if (dayOfWeek != dstDay)
@@ -1682,13 +1690,18 @@ void DSTCorrection()
             hour++;
             minute -= 60;
           }
+          while (minute < 0)
+          {
+            hour--;
+            minute += 60;
+          }
           hour += adjustMinutes / 60;
           setDS3231time(second, minute, hour, dayOfWeek, dayOfMonth, month, year);
         }
         else
 #endif
         {
-#if !defined ClockModule          
+#if !defined ClockModule
           minuteTime += adjustMinutes % 60;
           while (minuteTime >= 60)
           {
@@ -1696,7 +1709,7 @@ void DSTCorrection()
             minuteTime -= 60;
           }
           hourTime += adjustMinutes / 60;
-#endif          
+#endif
         }
         dstAdjust = false;
       }
@@ -1730,7 +1743,7 @@ bool InitClock()
 
 void setDS3231time(int second, int minute, int hour, byte dayOfWeek, byte dayOfMonth, byte month, byte year)
 {
-  if (dayOfWeek == 0)
+  //if (dayOfWeek == 0)
     dayOfWeek = dayofweek(2000 + year, month, dayOfMonth) + 1;
   // sets time and date data to DS3231
   Wire.beginTransmission(DS3231_I2C_ADDRESS);
@@ -1758,7 +1771,7 @@ void readDS3231time(int *second,
   Wire.endTransmission();
   Wire.requestFrom(DS3231_I2C_ADDRESS, 7);
   // request seven bytes of data from DS3231 starting from register 00h
-  byte b;
+  byte b, d, m, y;
   b = bcdToDec(Wire.read() & 0x7f);
   if (second != NULL)
     *second = b;
@@ -1770,7 +1783,15 @@ void readDS3231time(int *second,
     *hour = b;
   b = bcdToDec(Wire.read());
   if (dayOfWeek != NULL)
+  {
     *dayOfWeek = b;
+    if (dayOfMonth == NULL)
+      dayOfMonth = &d;
+    if (month == NULL)
+      month = &m;
+    if (year == NULL)
+      year = &y;
+  }
   b = bcdToDec(Wire.read());
   if (dayOfMonth != NULL)
     *dayOfMonth = b;
@@ -1780,6 +1801,9 @@ void readDS3231time(int *second,
   b = bcdToDec(Wire.read());
   if (year != NULL)
     *year = b;
+
+  if (dayOfWeek != NULL)
+    *dayOfWeek = dayofweek(2000 + *year, *month, *dayOfMonth) + 1;
 }
 
 void printDS3231time()
@@ -1787,7 +1811,7 @@ void printDS3231time()
   int second, minute, hour;
   byte dayOfWeek, dayOfMonth, month, year;
   char data[30];
-  
+
   readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
 
   sprintf(data, "%02d/%02d/%02d %02d:%02d:%02d", (int)dayOfMonth,  (int)month, (int)year, (int)hour, (int)minute, (int)second);
@@ -1834,7 +1858,7 @@ EthernetClient client;
 
 void setupEthernet()
 {
-#if defined EthernetModule  
+#if defined EthernetModule
   int ret;
 
   printSerialln("Start Ethernet");
@@ -1842,7 +1866,7 @@ void setupEthernet()
   ret = Ethernet.begin(mac);
 
   hasEthernet = (ret == 1);
-  
+
   if (!hasEthernet)
     prevEthernetCheck = millis();
   else
@@ -1905,7 +1929,7 @@ void printLocalIP()
 
 void printEthernetStatus()
 {
-#if defined EthernetModule  
+#if defined EthernetModule
   if (hasEthernet)
     printSerialln("Ethernet ok");
   else
@@ -1919,14 +1943,14 @@ void printEthernetStatus()
       nextCheck = 0;
     else
       nextCheck = waitReconnectEthernet - (CurrentTime1 - prevEthernetCheck);
-    
+
     char buf[50];
     sprintf(buf, "Next check in %d seconds", (int) (nextCheck / 1000));
     printSerialln(buf);
   }
 #else
   printSerialln("No Ethernet connection");
-#endif  
+#endif
 }
 
 #if defined  MQTTModule
@@ -1964,7 +1988,7 @@ void setupMQTT()
     device.setSoftwareVersion("1.0.0");
 
     device.enableSharedAvailability();
-    device.enableLastWill();    
+    device.enableLastWill();
 
     // for icons,
     // see https://pictogrammers.com/library/mdi/
@@ -1974,7 +1998,7 @@ void setupMQTT()
 
     chickenguardLDR.setIcon("mdi:flare");
     chickenguardLDR.setName("LDR");
-    
+
     chickenguardLDRavg.setIcon("mdi:flare");
     chickenguardLDRavg.setName("LDR Average");
 
@@ -2013,19 +2037,19 @@ void setupMQTT()
     printSerialln("Done MQTT");
 }
 
-void onMqttMessage(const char* topic, const uint8_t* payload, uint16_t length) 
+void onMqttMessage(const char* topic, const uint8_t* payload, uint16_t length)
 {
   if (strcmp(topic, "ChickenGuard/cmd") == 0)
   {
     String answer = "";
     for (int i = 0; i < length; i++)
       answer = answer + (char)payload[i];
-    
+
     Command(answer, false, false);
   }
 }
 
-void onMqttConnected() 
+void onMqttConnected()
 {
     printSerialln("Connected to the broker!");
 
@@ -2070,8 +2094,8 @@ void loopMQTT(bool force)
         printSerialln("MQTT restored");
       }
     }
-  }  
- 
+  }
+
 #endif
 }
 
@@ -2079,6 +2103,10 @@ void setMQTTDoorStatus(char *msg)
 {
 #if defined MQTTModule
   chickenguardDoorStatus.setValue(msg);
+#elif defined MQTTDebug
+  printSerial(">>>MQTT DoorStatus: ");
+  printSerialln(msg);
+  printSerialln("<<<");
 #endif
 }
 
@@ -2086,6 +2114,11 @@ void setMQTTLDR(int ldr)
 {
 #if defined MQTTModule
   chickenguardLDR.setValue(ldr);
+#elif defined MQTTDebug
+  printSerial(">>>MQTT LDR: ");
+  printSerialInt(ldr);
+  printSerialln();
+  printSerialln("<<<");
 #endif
 }
 
@@ -2093,13 +2126,23 @@ void setMQTTLDRavg(int average)
 {
 #if defined MQTTModule
   chickenguardLDRavg.setValue(average);
+#elif defined MQTTDebug
+  printSerial(">>>MQTT LDRAvg: ");
+  printSerialInt(average);
+  printSerialln();
+  printSerialln("<<<");
 #endif
 }
 
 void setMQTTTemperature()
 {
-#if defined MQTTModule && defined ClockModule  
+#if defined MQTTModule && defined ClockModule
   chickenguardTemperature.setValue(readTemperature());
+#elif defined MQTTDebug
+  printSerial(">>>MQTT Temperature: ");
+  printSerialInt(readTemperature());
+  printSerialln();
+  printSerialln("<<<");
 #endif
 }
 
@@ -2127,7 +2170,7 @@ void setMQTTTime()
     strcpy(buf, "Unknown");
 #else
   ShowTime(msOpened, timeNow, buf);
-#endif    
+#endif
   chickenguardTimeOpened.setValue(buf);
 
 #if defined ClockModule
@@ -2137,8 +2180,8 @@ void setMQTTTime()
     strcpy(buf, "Unknown");
 #else
   ShowTime(msClosed, timeNow, buf);
-#endif    
-  chickenguardTimeClosed.setValue(buf);  
+#endif
+  chickenguardTimeClosed.setValue(buf);
 #endif
 }
 
@@ -2148,6 +2191,10 @@ void setMQTTMonitor(char *msg)
   if (strlen(msg) > 255) // it looks like that a message may not be longer than 255 characters
     msg[255] = 0;
   chickenguardMonitor.setValue(msg);
+#elif defined MQTTDebug
+  printSerial(">>>MQTT Monitor: ");
+  printSerialln(msg);
+  printSerialln("<<<");
 #endif
 }
 
@@ -2155,17 +2202,21 @@ void setMQTTWaterStatus(char *msg)
 {
 #if defined MQTTModule
   chickenguardWaterStatus.setValue(msg);
+#elif defined MQTTDebug
+  printSerial(">>>MQTT WaterStatus: ");
+  printSerialln(msg);
+  printSerialln("<<<");
 #endif
 }
 
 void setUpTime()
 {
-#if defined MQTTModule  
+#if defined MQTTModule
   char buf[50];
 
   sprintf(buf, "%u:%02d:%02d:%02d", uptimeDays, (int)uptimeHours, (int)uptimeMinutes, (int)uptimeSeconds);
   chickenguardUpTime.setValue(buf);
-#endif  
+#endif
 }
 
 #if defined NTPModule
@@ -2193,8 +2244,6 @@ EthernetUDP Udp;
 void InitUdp()
 {
   Udp.begin(localPort);
-
-  set_zone(+1 * ONE_HOUR); // GMT+1
 }
 
 // send an NTP request to the time server at the given address
@@ -2237,7 +2286,7 @@ struct tm *GetNTP()
   sendNTPpacket(timeServer); // send an NTP packet to a time server
 
   uint32_t beginWait = millis();
-  while (millis() - beginWait < 1500) 
+  while (millis() - beginWait < 1500)
   {
     size = Udp.parsePacket();
     if (size >= NTP_PACKET_SIZE)
@@ -2256,19 +2305,137 @@ struct tm *GetNTP()
 
       // Unix time starts on Jan 1 1970. In seconds, that's 2208988800:
       const unsigned long seventyYears = 2208988800UL;
-  
+
       // subtract seventy years:
       unsigned long epoch = secsSince1900 - seventyYears;
 
       unsigned long unixTime = epoch - UNIX_OFFSET;
 
-      struct tm *time_info = localtime(&unixTime);
+      unixTime += 1L * 60L * 60L; // GMT+1
+
+      struct tm *time_info;
+
+      time_info = gmtime(&unixTime);
+
+      int dayOfWeek = dayofweek(1900 + time_info->tm_year, 1 + time_info->tm_mon, time_info->tm_mday) + 1;
+
+      if (isDstEurope(time_info->tm_mday, 1 + time_info->tm_mon, dayOfWeek, time_info->tm_hour))
+      {
+        unixTime += 1L * 60L * 60L; // summer time
+        time_info = gmtime(&unixTime);
+      }
 
       return time_info;
     }
   }
 
   return NULL;
+}
+
+// See https://arduinoforum.nl/viewtopic.php?f=9&t=3476#p25098
+
+// ---------------------------
+// isDstEurope
+// ---------------------------
+// Uses the normal local time (winter time) to determine
+// if the daylight saving is active.
+//
+// In Europe, the summer time (+1 hour) starts at
+// the last Sunday of March. At 02:00 (am) the clock
+// jumps to 03:00 (am).
+// The end if the summer time is at the last Sunday
+// of October. At 03:00 (am) the clock jumps back
+// to 02:00 (am).
+// When the winter time is the base, it means that the DST
+// becomes active at 02:00 (winter time) but also inactive at 02:00 (winter time).
+//
+// The parameters are the winter time, don't use the summertime for them.
+// day   : 1...31
+// month : 1...12
+// dow   : 1...7    1 = Sunday
+// hour  : 0...23
+//
+// Returns:
+//       boolean that indicates that an hour should be added.
+//       Note that this is not an increment of the hour, but
+//       everything advances an hour into the future.
+//
+boolean isDstEurope( int day, int month, int dow, int hour)
+{
+  boolean dst = false;
+
+  // day 1...31, dow 1...7
+  // calculate the current or previous Sunday of this month.
+  // the result could be negative, which is no problem.
+
+  int previousSunday = day - (dow - 1);
+
+  // The range for a switch-case statement is a non-standard 'c' usage !
+  switch( month)
+  {
+  case 1 ... 2:
+    dst = false;
+    break;
+  case 3:
+    // The lowest day for sunday is 25, the highest is 31
+    if( previousSunday >= 25)
+    {
+      if( dow == 1)     // is it sunday right now ?
+      {
+        if( hour >= 2)
+        {
+          dst = true;   // dst starts at two in the night
+        }
+        else
+        {
+          dst = false;  // it is the right date, but not yet time
+        }
+      }
+      else
+      {
+        dst = true;     // it is past the last sunday
+      }
+    }
+    else
+    {
+      dst = false;      // the date is before the last sunday
+    }
+    break;
+  case 4 ... 9:
+    dst = true;
+    break;
+  case 10:
+    if( previousSunday >= 25)
+    {
+      if( dow == 1)     // is it sunday right now ?
+      {
+        if( hour < 2)
+        {
+          dst = true;   // dst stops at two in the night
+        }
+        else
+        {
+          dst = false;  // it is the right date, but beyond the DST
+        }
+      }
+      else
+      {
+        dst = false;     // it is past the last sunday
+      }
+    }
+    else
+    {
+      dst = true;      // the date is before the last sunday
+    }
+    break;
+  case 11 ... 12:
+    dst = false;
+    break;
+  default:
+    // wrong parameter for the month
+    dst = false;
+  }
+  return dst;
 }
 
 void printNTP()
@@ -2295,8 +2462,8 @@ void SyncDateTime()
     struct tm *time_info = GetNTP();
     if (time_info != NULL)
     {
-#if defined ClockModule  
-      setDS3231time(time_info->tm_sec, time_info->tm_min, time_info->tm_hour, 0, time_info->tm_mday, 1 + time_info->tm_mon, 1900 + time_info->tm_year);
+#if defined ClockModule
+      setDS3231time(time_info->tm_sec, time_info->tm_min, time_info->tm_hour, 0, time_info->tm_mday, 1 + time_info->tm_mon, 1900 + time_info->tm_year - 2000);
       printDS3231time();
 #else
       msTime = millis();
