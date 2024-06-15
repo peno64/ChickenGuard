@@ -51,14 +51,67 @@
 
 */
 
+//#define WOKWI // simulator https://wokwi.com/
+
+#if defined ESP32
+# define ESP32_DEVKIT_V1
+#endif
+
 #include <Arduino.h>
 
+/*
+  Content of secret.h:
+
+#define WIFISSID "<your wifi ssid>"
+#define WIFIPASSWORD "<your wifi password>"
+
+#define MQTTUSER "<your mqtt user>"
+#define MQTTPASSWORD "<your mqtt password>"
+
+or when no password for MQTT
+
+#undef MQTTUSER
+#undef MQTTPASSWORD
+
+#define UPLOADUSER "<your upload user>"
+#define UPLOADPASSWORD "<your upload password>"
+
+*/
+
+#include "secret.h"
+
+#if defined ESP32_DEVKIT_V1
+#define WIFI
+#endif
+#if defined ESP32_DEVKIT_V1 && !defined WOKWI
+#define OTA
+#define SERIALBT
+#endif // ESP32_DEVKIT_V1
+
+#if defined SERIALBT
+
+#include "BluetoothSerial.h"
+
+#if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
+#error Bluetooth is not enabled! Please run `make menuconfig` to and enable it
+#endif
+
+BluetoothSerial SerialBT;
+
+#endif // SERIALBT
+
 #define ClockModule                 // If defined then compile with the clock module code
-#define EthernetModule              // If defined then connect to ethernet
-#define MQTTModule                  // If defined then compile with MQTT support - can be used via Home Assistant
+#if defined ESP32_DEVKIT_V1 || !defined WOKWI
+# define EthernetModule              // If defined then connect to ethernet
+#endif
+#if !defined WOKWI
+# define MQTTModule                  // If defined then compile with MQTT support - can be used via Home Assistant
+#endif
 #define NTPModule                   // If defined then get internet time
 #define EEPROMModule                // If defined then store data in EEPROM
-#define SERIAL1                     // If defined then also communicate via Serial1 (Bluetooth in my case)
+#if !defined ESP32_DEVKIT_V1
+# define SERIAL1                    // If defined then also communicate via Serial1 (Bluetooth in my case)
+#endif
 //#define CONTROLBUILTIN              // If set then set the BUILTIN LED
 
 #if !defined EthernetModule
@@ -66,7 +119,14 @@
 # undef NTPModule                   // NTP can't work without ethernet
 #endif
 
-#if defined MQTTMModule
+#define postfix "2"
+
+#define myName "ChickenGuard" postfix
+
+#if defined MQTTModule
+
+#define MQTTid "ChickenGuard" postfix
+#define MQTTprefix "Chickenguard" postfix
 
 /*
 
@@ -83,7 +143,47 @@ logbook:
 
 */
 
+#endif // MQTTModule
+
+#if defined ESP32_DEVKIT_V1
+# define MOTORCLOSEPIN 25
+# define MOTOROPENPIN 26
+# define MOTORPWMPIN 0 //27 // does not work yet for ESP32. Extra code must be added
+# define LEDCLOSEDPIN 32
+# define LEDOPENEDPIN 33
+# define MAGNETPIN 39
+# define LDRPIN 34
+# define LEDNOTEMPTYPIN 14
+# define LEDEMPTYPIN 13
+# define ALMOSTEMPTYPIN 35
+# define EMPTYPIN 36
+#else
+# define MOTORCLOSEPIN 4
+# define MOTOROPENPIN 5
+# define MOTORPWMPIN 44 // 490 Hz (4 and 13 are 980 Hz but 490 seems to work alot better) - See https://www.arduino.cc/reference/en/language/functions/analog-io/analogwrite/
+# define LEDCLOSEDPIN 6
+# define LEDOPENEDPIN 7
+# define MAGNETPIN 3
+# define LDRPIN A2
+# define LEDNOTEMPTYPIN 9
+# define LEDEMPTYPIN 8
+# define ALMOSTEMPTYPIN 11
+# define EMPTYPIN 12
 #endif
+
+const int motorClosePin = MOTORCLOSEPIN;        // motor turns one way to close the door
+const int motorOpenPin = MOTOROPENPIN;          // motor turns other way to open the door
+const int motorPWMPin = MOTORPWMPIN;            // motor PWM pin
+const int ledClosedPinInit = LEDCLOSEDPIN;
+int ledClosedPin = ledClosedPinInit;            // green LED - door closed
+int ledOpenedPin = LEDOPENEDPIN;                // red LED - door open
+const int magnetPin = MAGNETPIN;                // magnet switch
+const int ldrPin = LDRPIN;                      // LDR (light sensor)
+
+int ledNotEmptyPin = LEDNOTEMPTYPIN;            // green LED - enough water
+int ledEmptyPin = LEDEMPTYPIN;                  // red LED - (almost) empty water
+const int almostEmptyPin = ALMOSTEMPTYPIN;      // almost empty switch
+const int emptyPin = EMPTYPIN;                  // empty switch
 
 /* Up time */
 unsigned int uptimeDays = 0;
@@ -96,19 +196,6 @@ const int ldrCloseNow = 0;          // light value for door close now
 
 const int nMeasures = 5;            // number of measures to do on which an average is made to determine if door is opened (avg >= ldrMorning) or closed (avg <= ldrEvening)
 const int measureEverySeconds = 60; // number of seconds between light measurements and descision if door should be closed or opened
-const int motorClosePin = 4;        // motor turns one way to close the door
-const int motorOpenPin = 5;         // motor turns other way to open the door
-const int motorPWMPin = 44;         // motor PWM pin: 490 Hz (4 and 13 are 980 Hz but 490 seems to work alot better) - See https://www.arduino.cc/reference/en/language/functions/analog-io/analogwrite/
-const int ledClosedPinInit = 6;
-int ledClosedPin = ledClosedPinInit;// green LED - door closed  D6
-int ledOpenedPin = 7;               // red LED - door open  D7
-const int magnetPin = 3;            // magnet switch  D3
-const int ldrPin = A2;              // LDR (light sensor) A2
-
-int ledNotEmptyPin = 9;             // green LED - enough water  D9
-int ledEmptyPin = 8;                // red LED - (almost) empty water  D8
-const int almostEmptyPin = 11;      // almost empty switch D11
-const int emptyPin = 12;            // empty switch D12
 
 // ... for this much of milliseconds and then continue closing the door
 const unsigned long waitForInputMaxMs = 900000; // maximum wait time for input (900000 ms = 15 min)
@@ -196,13 +283,13 @@ struct
 } changeableData[] =
 {
   { "ldrMorning", &ldrMorning, 600 },
-  { "ldrEvening", &ldrEvening, 40 },
+  { "ldrEvening", &ldrEvening, 400 },
   { "motorPWM", &motorPWM, 255 }, // 255 = full speed
-  { "openMilliseconds", &openMilliseconds, 1100 },
-  { "closeMilliseconds", &closeMilliseconds, 3000 },
-  { "closeWaitTime1", &closeWaitTime1, 1400 },
-  { "closeWaitTime2", &closeWaitTime2, 2000 },
-  { "closeWaitTime3", &closeWaitTime3, 30 },
+  { "openMilliseconds", &openMilliseconds, 1400 },
+  { "closeMilliseconds", &closeMilliseconds, 4000 },
+  { "closeWaitTime1", &closeWaitTime1, 10000 },
+  { "closeWaitTime2", &closeWaitTime2, 4000 },
+  { "closeWaitTime3", &closeWaitTime3, 40 },
 #if defined ClockModule
   { "hourOpened", &hourOpened, 0 },
   { "minuteOpened", &minuteOpened, 0 },
@@ -215,6 +302,39 @@ struct
 
 void(* resetFunc) (void) = 0;       //declare reset function at address 0
 
+#if defined resetPin
+
+void SetupReset()
+{
+  digitalWrite(resetPin, HIGH); // Set digital pin to HIGH
+  delay(200);
+  pinMode(resetPin, OUTPUT); // Make sure it gets the HIGH
+  delay(200);
+  pinMode(resetPin, INPUT_PULLUP); // Change this to a pullup resistor such that arduino can still reset itself (for example upload sketch)
+}
+
+void DoReset()
+{
+  pinMode(resetPin, OUTPUT);    // Change to an output
+  digitalWrite(resetPin, LOW);  // Reset
+  // Should not get here but if it does undo reset
+  delay(500);
+  SetupReset();
+  resetFunc(); // try a soft reset
+}
+
+#else
+
+#define SetupReset()
+
+#if defined ESP32
+#define DoReset() ESP.restart()
+#else
+#define DoReset() resetFunc()
+#endif
+
+#endif
+
 void printSerial(char *data)
 {
   int l = strlen(data);
@@ -224,6 +344,9 @@ void printSerial(char *data)
 # if defined SERIAL1
     Serial1.print(data);
 # endif
+# if defined SERIALBT
+    SerialBT.print(data);
+# endif
 }
 
 void printSerialInt(int a)
@@ -231,6 +354,9 @@ void printSerialInt(int a)
   Serial.print(a);
 # if defined SERIAL1
     Serial1.print(a);
+# endif
+# if defined SERIALBT
+    SerialBT.print(a);
 # endif
 }
 
@@ -241,6 +367,9 @@ void printSerialln(char *data)
   Serial.println();
 # if defined SERIAL1
     Serial1.println();
+# endif
+# if defined SERIALBT
+    SerialBT.println();
 # endif
 }
 
@@ -292,14 +421,26 @@ void setChangeableData()
 // arduino function called when it starts or a reset is done
 void setup(void)
 {
-  Serial.begin(9600);
+  SetupReset();
+
+# if defined ESP32_DEVKIT_V1
+    Serial.begin(115200);
+# else
+    Serial.begin(9600);
+# endif
+
   Serial.setTimeout(60000);
 # if defined SERIAL1
     Serial1.begin(9600);
     Serial1.setTimeout(60000);
 # endif
 
-  printSerialln("Chicken hatch 06/04/2024. Copyright peno");
+#if defined SERIALBT
+    SerialBT.begin(myName); //Bluetooth device name
+    SerialBT.setTimeout(60000);
+#endif
+
+  printSerialln("Chicken hatch 15/06/2024. Copyright peno");
 
   setChangeableData();
 
@@ -315,15 +456,14 @@ void setup(void)
 
   pinMode(motorClosePin, OUTPUT);
   pinMode(motorOpenPin, OUTPUT);
-  pinMode(motorPWMPin, OUTPUT);
+  if (motorPWMPin != 0)
+    pinMode(motorPWMPin, OUTPUT);
   pinMode(ldrPin, INPUT);
   pinMode(magnetPin, INPUT_PULLUP);
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
   pinMode(ledOpenedPin, OUTPUT);
-  digitalWrite(ledOpenedPin, LOW);
   pinMode(ledClosedPin, OUTPUT);
-  digitalWrite(ledClosedPin, LOW);
 
   pinMode(ledNotEmptyPin, OUTPUT);
   digitalWrite(ledNotEmptyPin, LOW);
@@ -332,8 +472,23 @@ void setup(void)
   pinMode(almostEmptyPin, INPUT_PULLUP);
   pinMode(emptyPin, INPUT_PULLUP);
 
+  // red
+  digitalWrite(ledOpenedPin, HIGH);
+  digitalWrite(ledClosedPin, LOW);
+
 # if defined EthernetModule
     setupEthernet();
+# endif
+# if defined WOKWI
+    delay(5000);
+# endif
+
+  // yellow
+  digitalWrite(ledOpenedPin, HIGH);
+  digitalWrite(ledClosedPin, HIGH);
+
+# if defined OTA
+    setupOTA();
 # endif
 
 # if defined MQTTModule
@@ -363,7 +518,13 @@ void setup(void)
   printSerialln("NTP module not enabled");
 #endif
 
-  SetLEDOff();
+# if defined WOKWI
+    delay(5000);
+# endif
+
+  // green
+  digitalWrite(ledOpenedPin, LOW);
+  digitalWrite(ledClosedPin, HIGH);
 
   SetStatusLed(false);
 
@@ -371,13 +532,20 @@ void setup(void)
 
   isClosedByMotor = IsClosed();
 
-  SetLEDOpenClosed();
-
   LightMeasurement(true); // fill the whole light measurement array with the current light value
+
+  bool flip = false;
 
   // First 60 seconds chance to enter commands
   for (int i = 59; i >= 0; i--)
   {
+    ProcessWater();
+
+    flip = !flip;
+
+    digitalWrite(ledOpenedPin, flip ? LOW : HIGH);
+    digitalWrite(ledClosedPin, flip ? HIGH : LOW);
+
     loopEthernet();
     loopMQTT(false);
 
@@ -404,11 +572,13 @@ void setup(void)
 
   printSerialln("Starting");
 
-  Close(); // Via the magnet switch we know for sure that the door is closed hereafter
+  SetLEDOpenClosed();
+
+  Close(false); // Via the magnet switch we know for sure that the door is closed hereafter
 
   LightMeasurement(true); // fill the whole light measurement array with the current light value
 
-  ProcessDoor(true); // opens the door if light and lets it closed if dark
+  ProcessDoor(true, false); // opens the door if light and lets it closed if dark
 
   measureEverySecond = measureEverySeconds;
   PrevTime = PrevSyncTime = millis();
@@ -440,13 +610,16 @@ void MotorOff(void)
 }
 
 // run the motor in opening direction
-void MotorOpen(void)
+void MotorOpen(bool log)
 {
-  analogWrite(motorPWMPin, motorPWM); // See https://www.arduino.cc/reference/en/language/functions/analog-io/analogwrite/
+  if (motorPWMPin != 0)
+    analogWrite(motorPWMPin, motorPWM); // See https://www.arduino.cc/reference/en/language/functions/analog-io/analogwrite/
 
   digitalWrite(motorClosePin, LOW);
   digitalWrite(motorOpenPin, HIGH);
 
+  if (log)
+  {
 #if defined ClockModule
   if (hasClockModule)
   {
@@ -458,16 +631,20 @@ void MotorOpen(void)
 #else
   msOpened = millis();
 #endif
+  }
 }
 
 // run the motor in closing direction
-void MotorClose(void)
+void MotorClose(bool log)
 {
-  analogWrite(motorPWMPin, motorPWM);
+  if (motorPWMPin != 0)
+    analogWrite(motorPWMPin, motorPWM);
 
   digitalWrite(motorClosePin, HIGH);
   digitalWrite(motorOpenPin, LOW);
 
+  if (log)
+  {
 #if defined ClockModule
   if (hasClockModule)
   {
@@ -479,16 +656,17 @@ void MotorClose(void)
 #else
   msClosed = millis();
 #endif
+  }
 }
 
 // close the door
-void Close(void)
+void Close(bool log)
 {
   printSerialln("Closing door");
 
   if (!IsClosed())
   {
-    MotorClose();
+    MotorClose(log);
 
     // run the motor until magnetic switch detects closed or maximum closeMilliseconds milliseconds (for safety if something goes wrong)
     // after closeWaitTime1 the motor stops for closeWaitTime2 milliseconds such that the door is again in rest because the elastic lets it vibrate
@@ -507,7 +685,7 @@ void Close(void)
         delay(closeWaitTime2);
         waited = true;
         StartTime += closeWaitTime2;
-        MotorClose();
+        MotorClose(false);
         printSerialln("Closing door 3");
       }
     }
@@ -533,7 +711,7 @@ void Close(void)
         printSerialInt(i);
         printSerialln(")");
 
-        MotorClose();
+        MotorClose(false);
 
         delay(closeWaitTime3); // close only for 30 milliseconds
 
@@ -565,7 +743,7 @@ void Close(void)
 }
 
 // Open the door
-void Open(void)
+void Open(bool log)
 {
   printSerialln("Opening door");
 
@@ -573,7 +751,7 @@ void Open(void)
   {
     if (IsClosed())
     {
-      MotorOpen();
+      MotorOpen(log);
       // There is no detection on the door when it is open so the motor runs for openMilliseconds milliseconds to open the door
       delay(openMilliseconds);
       MotorOff();
@@ -604,12 +782,21 @@ void Open(void)
   }
 }
 
+uint16_t ReadLDR()
+{
+  uint16_t ldr = analogRead(ldrPin);
+# if defined ESP32
+    ldr >>= 2;
+# endif
+  return ldr;
+}
+
 // Do a light measurement
 void LightMeasurement(bool init)
 {
   int counter;
 
-  uint16_t ldr = analogRead(ldrPin);
+  uint16_t ldr = ReadLDR();
   if (keepClosed)
     ldr = ldrCloseNow;
   else if (keepOpen)
@@ -659,7 +846,7 @@ void LightCalculation(uint16_t &average, uint16_t &minimum, uint16_t &maximum, b
     if (!ahead || counter != measureIndex)
       ldr = lightMeasures[counter];
     else
-      ldr = analogRead(ldrPin);
+      ldr = ReadLDR();
 
     average += ldr;
     if (ldr > maximum)
@@ -693,7 +880,7 @@ void checkReset(bool open)
 }
 
 // check if door must be opened or closed and do it if needed
-int ProcessDoor(bool mayOpen)
+int ProcessDoor(bool mayOpen, bool log)
 {
   uint16_t average, minimum, maximum;
   int ret = 0;
@@ -702,7 +889,7 @@ int ProcessDoor(bool mayOpen)
   setMQTTLDRavg((int)average);
   setMQTTTemperature();
 
-  int ldr = analogRead(ldrPin);
+  int ldr = ReadLDR();
   setMQTTLDR(ldr);
   if (ldr <= ldrCloseNow || keepClosed)
   {
@@ -730,11 +917,11 @@ int ProcessDoor(bool mayOpen)
 
   if (isClosed)
     hourOpened2 = minuteOpened2 = secondOpened2 = 0;
-  else if (hourOpened2 == 0 && minuteOpened2 == 0 && secondOpened2 == 0)
+  else if (hasClockModule && hourOpened2 == 0 && minuteOpened2 == 0 && secondOpened2 == 0)
     readDS3231time(&secondOpened2, &minuteOpened2, &hourOpened2, NULL, NULL, NULL, NULL);
 #endif
 
-  char *ptr = status == 0 ? isClosed ? "Door closed" : "Door open" : status == 1 ? "Door should be open but is still closed" : status == 2 ? "Door not closed after timeout" : "Door not closed after 10 tries to tighten";;
+  char *ptr = (char *)(status == 0 ? isClosed ? "Door closed" : "Door open" : status == 1 ? "Door should be open but is still closed" : status == 2 ? "Door not closed after timeout" : "Door not closed after 10 tries to tighten");
 
   if (status != 0)
   {
@@ -759,14 +946,14 @@ int ProcessDoor(bool mayOpen)
   // If the average is less than ldrEvening and the door is not closed then close it
   else if (average <= ldrEvening && !isClosed)
   {
-    Close();
+    Close(log);
     ret = motorClosePin;
   }
 
   // If the average is greater than ldrMorning and the door may open and it is closed and it may open by time then open it
   else if (average >= ldrMorning && isClosed && (average == ldrOpenNow || (mayOpen && MayOpen(0))))
   {
-    Open();
+    Open(log);
     ret = motorOpenPin;
   }
 
@@ -816,6 +1003,7 @@ void loop(void)
 {
   loopEthernet();
   loopMQTT(false);
+  loopOTA();
 
   unsigned long CurrentTime = millis();
 
@@ -839,15 +1027,11 @@ void loop(void)
 
     setUpTime();
 
-#if defined NTPModule
-    //printNTP();
-#endif
-
     ProcessWater();
 
     measureEverySecond--;
 
-    int ret = ProcessDoor(false);
+    int ret = ProcessDoor(false, true);
 
     if (status != 0)
     {
@@ -884,7 +1068,7 @@ void loop(void)
 
       LightMeasurement(false);
 
-      ProcessDoor(isClosedByMotor == IsClosed()); // If the door is manually closed then don't try to open
+      ProcessDoor(isClosedByMotor == IsClosed(), true); // If the door is manually closed then don't try to open
 
       measureEverySecond = measureEverySeconds;
     }
@@ -962,7 +1146,7 @@ void info(int measureEverySecond, bool withDayOfWeek, char *buf)
   uint16_t average, minimum, maximum;
 
   LightCalculation(average, minimum, maximum);
-  sprintf(buf + strlen(buf), "LDR: %d, ~: %d", analogRead(ldrPin), average);
+  sprintf(buf + strlen(buf), "LDR: %d, ~: %d", ReadLDR(), average);
 
   LightCalculation(average, minimum, maximum, true);
   sprintf(buf + strlen(buf), ", ~~: %d, Door is %s (%s), Open LDR: %d, Close LDR: %d, Status: %d", average, IsClosed() ? "closed" : "open", isClosedByMotor ? "closed" : "open", ldrMorning, ldrEvening, status);
@@ -1028,7 +1212,7 @@ void ShowTime(int *hour, int *minute, int *second, byte *dayOfWeek, char *buf)
   if (dayOfWeek != NULL)
     sprintf(buf + strlen(buf), " (%d)", *dayOfWeek);
 
-  if (buf == buffer)
+  if (buf == (char *)buffer)
     printSerial(buf);
 }
 
@@ -1065,14 +1249,14 @@ void GetTime(int &hour, int &minute, int &second)
 }
 
 #if !defined ClockModule
-void GetTime(unsigned long time, unsigned long timeNow, byte &hour, byte &minute, byte &second)
+void GetTime(unsigned long time, unsigned long timeNow, int &hour, int &minute, int &second)
 {
   byte year, month, day;
 
   GetTime(time, timeNow, year, month, day, hour, minute, second);
 }
 
-void GetTime(unsigned long time, unsigned long timeNow, byte &year, byte &month, byte &day, byte &hour, byte &minute, byte &second)
+void GetTime(unsigned long time, unsigned long timeNow, byte &year, byte &month, byte &day, int &hour, int &minute, int &second)
 {
   if (msTime != 0 && time >= msTime)
   {
@@ -1138,7 +1322,7 @@ void ShowTime(unsigned long time, unsigned long timeNow, char *buf)
 
   if (msTime == 0)
   {
-    sprintf(buf, "%lu", time);
+    sprintf(buf, "%lu", timeNow);
 
     if (timeNow > time)
     {
@@ -1162,7 +1346,7 @@ void ShowTime(unsigned long time, unsigned long timeNow, char *buf)
     *buf = 0;
     if (time >= msTime)
     {
-      byte hour, minute, second;
+      int hour, minute, second;
 
       GetTime(time, timeNow, hour, minute, second);
 
@@ -1192,6 +1376,10 @@ String WaitForInput(char *question)
 # if defined SERIAL1
          && !Serial1.available()
 # endif
+# if defined SERIALBT
+         && !SerialBT.available()
+# endif
+
          && ElapsedTime < waitForInputMaxMs)
   {
     // wait for input
@@ -1199,15 +1387,15 @@ String WaitForInput(char *question)
     ElapsedTime = CurrentTime - StartTime; // note that an overflow of millis() is not a problem. ElapsedTime will still be correct
   }
 
-  return ElapsedTime < waitForInputMaxMs ?
-          Serial.available() ?
-          Serial.readStringUntil(10) :
+  return ElapsedTime >= waitForInputMaxMs ? "" :
+          Serial.available() ? Serial.readStringUntil(10) :
 # if defined SERIAL1
-          Serial1.readStringUntil(10)
-# else
-          ""
+          Serial1.available() ? Serial1.readStringUntil(10) :
 # endif
-          : "";
+# if defined SERIALBT
+          SerialBT.available() ? SerialBT.readStringUntil(10) :
+# endif
+          "";
 }
 
 int Command(bool start)
@@ -1218,6 +1406,9 @@ int Command(bool start)
   if (Serial.available()
 # if defined SERIAL1
       || Serial1.available()
+# endif
+# if defined SERIALBT
+      || SerialBT.available()
 # endif
      )
   {
@@ -1281,7 +1472,7 @@ void Command(String answer, bool wait, bool start)
   answer.toUpperCase();
 
   printSerial("Received: ");
-  printSerialln(answer.c_str());
+  printSerialln((char *)answer.c_str());
 
   if (answer.substring(0, 2) == "AT") // current date/time arduino: dd/mm/yy hh:mm:ss
   {
@@ -1308,7 +1499,8 @@ void Command(String answer, bool wait, bool start)
       }
     }
 
-    byte second, minute, hour, dayOfMonth, month, year;
+    byte dayOfMonth, month, year;
+    int hour, minute, second;
     char data[30];
     unsigned long timeNow = millis();
 
@@ -1323,7 +1515,7 @@ void Command(String answer, bool wait, bool start)
 #endif
   }
 
-  else if (answer.substring(0, 2) == "CT") // current date/time clock module: dd/mm/yy hh:mm:ss
+  else if (answer.substring(0, 2) == "CT" && hasClockModule) // current date/time clock module: dd/mm/yy hh:mm:ss
   {
 #if defined ClockModule
     if (answer[2])
@@ -1348,7 +1540,7 @@ void Command(String answer, bool wait, bool start)
 
   else if (answer.substring(0, 1) == "O") // open
   {
-    Open();
+    Open(false);
 
     keepOpen = true;
     keepClosed = false;
@@ -1361,7 +1553,7 @@ void Command(String answer, bool wait, bool start)
 
   else if (answer.substring(0, 1) == "C") // close
   {
-    Close();
+    Close(false);
 
     keepClosed = true;
     keepOpen = false;
@@ -1377,7 +1569,7 @@ void Command(String answer, bool wait, bool start)
     keepOpen = keepClosed = false;
 
     LightMeasurement(true); // fill the whole light measurement array with the current light value
-    ProcessDoor(true); // opens the door if light and lets it closed if dark
+    ProcessDoor(true, false); // opens the door if light and lets it closed if dark
 
     if (logit && wait)
       WaitForInput("Press enter to continue");
@@ -1425,7 +1617,7 @@ void Command(String answer, bool wait, bool start)
 
   else if (answer.substring(0, 4) == "LET ")
   {
-    char *ptr, *value, *variable = answer.c_str() + 4;
+    char *ptr, *value, *variable = (char *)answer.c_str() + 4;
 
     while (*variable == ' ')
       variable++;
@@ -1457,7 +1649,7 @@ void Command(String answer, bool wait, bool start)
   {
     char *ptr, *value, *variable;
 
-    variable = answer.length() > 3 ? answer.c_str() + 4 : NULL;
+    variable = (char *) (answer.length() > 3 ? answer.c_str() + 4 : NULL);
     if (variable != NULL)
     {
       while (*variable == ' ')
@@ -1486,23 +1678,29 @@ void Command(String answer, bool wait, bool start)
 
   else if (answer.substring(0, 5) == "RESET") // reset
   {
-    resetFunc(); //call reset
+    DoReset(); //call reset
   }
 
   else if (answer.substring(0, 1) == "R") // repeat
   {
     int x = answer.substring(1).toInt();
 
+    bool isClosedByMotor = IsClosed();
+
     for (int i = 0; i < x; i++)
     {
-      Close();
+      Close(false);
 
       delay(5000);
 
-      Open();
+      Open(false);
 
       delay(5000);
     }
+
+    if (isClosedByMotor)
+      Close(false);
+
     if (logit && wait)
       WaitForInput("Press enter to continue");
   }
@@ -1820,15 +2018,21 @@ void printDS3231time()
 
 float readTemperature()
 {
-  Wire.beginTransmission(DS3231_I2C_ADDRESS);
-  Wire.write(0x11); // register address for the temperature
-  Wire.endTransmission();
-  Wire.requestFrom(DS3231_I2C_ADDRESS, 2);       // get 2 bytes
-  int MSB = Wire.read();                         // 2's complement int portion
-  int LSB = Wire.read();                         // fraction portion
-  float temperature = MSB & 0x7F;                // do 2's moth on MSB
-  temperature = temperature + (LSB >> 6) * 0.25; // only care about bits 7 and 8
+  float temperature;
 
+  if (hasClockModule)
+  {
+    Wire.beginTransmission(DS3231_I2C_ADDRESS);
+    Wire.write(0x11); // register address for the temperature
+    Wire.endTransmission();
+    Wire.requestFrom(DS3231_I2C_ADDRESS, 2);       // get 2 bytes
+    int MSB = Wire.read();                         // 2's complement int portion
+    int LSB = Wire.read();                         // fraction portion
+    temperature = MSB & 0x7F;                // do 2's moth on MSB
+    temperature = temperature + (LSB >> 6) * 0.25; // only care about bits 7 and 8
+  }
+  else
+    temperature = 0.0;
   return temperature;
 }
 #endif /* ClockModule */
@@ -1841,24 +2045,89 @@ const int maxDurationEthernetConnect = 5000; /* 5 seconds */
 bool hasEthernet = false;
 unsigned long prevEthernetCheck = 0;
 
-#if defined(__AVR_ATmega328P__) || defined(__AVR_ATmega328__)
+#if defined WIFI
+
+#include <WiFi.h>
+#include <WiFiClient.h>
+
+#if defined OTA
+
+#include <WebServer.h>
+#include <ESPmDNS.h>
+#include <Update.h>
+
+#endif // OTA
+
+#elif defined(__AVR_ATmega328P__) || defined(__AVR_ATmega328__)
 // Nano
 #include <EthernetENC.h> // uses a bit less memory
 //#include <UIPEthernet.h> // uses a bit more memory
 #else
 // Mega
 #include <Ethernet.h> // does not work with an Arduino nano and its internet shield because it uses ENC28J60 which is a different instruction set
+
 #endif
+
+#if defined WIFI
+
+WiFiClient client;
+
+byte mac[] = { 0xa8, 0x42, 0xe3, 0x9e, 0xb0, 0x00 };
+
+#else
 
 byte mac[] = { 0x54, 0x34, 0x41, 0x30, 0x30, 0x32 };
 
 EthernetClient client;
 
+#endif
+
 #endif /* EthernetModule */
 
 void setupEthernet()
 {
-#if defined EthernetModule
+
+#if defined WIFI
+
+  delay(10);
+
+  printSerialln();
+  printSerial("Connecting to ");
+  printSerialln((char*)WIFISSID);
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFISSID, WIFIPASSWORD);
+
+  unsigned long t1 = millis();
+  while (WiFi.status() != WL_CONNECTED) {
+      unsigned long t2 = millis();
+      if (t2 - t1 > 1 * 60 * 1000) // try 10 minutes
+        DoReset();
+
+      delay(500);
+      printSerial(".");
+  }
+
+  hasEthernet = true;
+
+  printSerialln();
+  printSerialln("WiFi connected");
+
+  IPAddress ip = WiFi.localIP();
+
+  char buf[50];
+  sprintf(buf, "IP address: %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+
+  printSerialln(buf);
+
+  WiFi.macAddress(mac);
+  sprintf(buf, "MAC address: %02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  printSerialln(buf);
+
+  sprintf(buf, "RRSI: %d", (int)WiFi.RSSI());
+  printSerialln(buf);
+
+#elif defined EthernetModule
   int ret;
 
   printSerialln("Start Ethernet");
@@ -1885,7 +2154,9 @@ void setupEthernet()
 
 void loopEthernet()
 {
-#if defined EthernetModule
+#if defined WIFI
+
+#elif defined EthernetModule
 
   unsigned long CurrentTime1 = millis();
   if (prevEthernetCheck == 0 /* If previous connection was ok */ ||
@@ -1917,7 +2188,11 @@ void loopEthernet()
 void printLocalIP()
 {
 #if defined EthernetModule
+# if defined WIFI
+  IPAddress ip = WiFi.localIP();
+#else
   IPAddress ip = Ethernet.localIP();
+#endif
 
   char sip[16];
   sprintf(sip, "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
@@ -1953,7 +2228,115 @@ void printEthernetStatus()
 #endif
 }
 
-#if defined  MQTTModule
+#if defined OTA
+
+#define UPDATEPAGE "/jsdlmkfjcnsdjkqcfjdlkckslcndsjfsdqfjksd" // a name that nobody can figure out
+
+const char *uploadContent =
+"<script src='https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js'></script>"
+"<form method='POST' action='#' enctype='multipart/form-data' id='upload_form'>"
+   "<input type='file' name='update'>"
+   "<br>"
+   "<br>"
+   "<input type='submit' value='Update'>"
+"</form>"
+ "<div id='prg'>progress: 0%</div>"
+ "<script>"
+  "$('form').submit(function(e){"
+  "e.preventDefault();"
+  "var form = $('#upload_form')[0];"
+  "var data = new FormData(form);"
+  " $.ajax({"
+  "url: '" UPDATEPAGE "',"
+  "type: 'POST',"
+  "data: data,"
+  "contentType: false,"
+  "processData:false,"
+  "xhr: function() {"
+  "var xhr = new window.XMLHttpRequest();"
+  "xhr.upload.addEventListener('progress', function(evt) {"
+  "if (evt.lengthComputable) {"
+  "var per = evt.loaded / evt.total;"
+  "$('#prg').html('progress: ' + Math.round(per*100) + '%');"
+  "}"
+  "}, false);"
+  "return xhr;"
+  "},"
+  "success:function(d, s) {"
+  "console.log('success!')"
+ "},"
+ "error: function (a, b, c) {"
+ "}"
+ "});"
+ "});"
+ "</script>";
+
+WebServer server(80);
+
+const char *host = myName;
+
+void setupOTA()
+{
+  /*use mdns for host name resolution*/
+  if (!MDNS.begin(host)) { //http://esp32.local
+    Serial.println("Error setting up MDNS responder!");
+    while (1) {
+      delay(1000);
+    }
+  }
+  Serial.println("mDNS responder started");
+  /*return upload page which is stored in uploadContent */
+  server.on("/", HTTP_GET, []() {
+    // See https://github.com/espressif/arduino-esp32/blob/master/libraries/WebServer/examples/HttpBasicAuth/HttpBasicAuth.ino
+    if (!server.authenticate(UPLOADUSER, UPLOADPASSWORD)) {
+      return server.requestAuthentication();
+    }
+    server.sendHeader("Connection", "close");
+    server.send(200, "text/html", uploadContent);
+  });
+  /*handling uploading firmware file */
+  server.on(UPDATEPAGE, HTTP_POST, []() {
+    // See https://github.com/espressif/arduino-esp32/blob/master/libraries/WebServer/examples/HttpBasicAuth/HttpBasicAuth.ino
+    if (!server.authenticate(UPLOADUSER, UPLOADPASSWORD)) {
+      return server.requestAuthentication();
+    }
+    server.sendHeader("Connection", "close");
+    server.send(200, "text/plain", (Update.hasError()) ? "FAIL" : "OK");
+    ESP.restart();
+  }, []() {
+    HTTPUpload& upload = server.upload();
+    if (upload.status == UPLOAD_FILE_START) {
+      Serial.printf("Update: %s\n", upload.filename.c_str());
+      if (!Update.begin(UPDATE_SIZE_UNKNOWN)) { //start with max available size
+        Update.printError(Serial);
+      }
+    } else if (upload.status == UPLOAD_FILE_WRITE) {
+      /* flashing firmware to ESP*/
+      if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+        Update.printError(Serial);
+      }
+    } else if (upload.status == UPLOAD_FILE_END) {
+      if (Update.end(true)) { //true to set the size to the current progress
+        Serial.printf("Update Success: %u\nRebooting...\n", upload.totalSize);
+      } else {
+        Update.printError(Serial);
+      }
+    }
+  });
+
+  server.begin();
+}
+
+#endif
+
+void loopOTA()
+{
+#if defined OTA
+  server.handleClient();
+#endif
+}
+
+#if defined MQTTModule
 
 // See https://github.com/dawidchyrzynski/arduino-home-assistant/
 // See https://dawidchyrzynski.github.io/arduino-home-assistant/documents/getting-started/index.html
@@ -1971,20 +2354,20 @@ int cntMQTTCheck = 0;
 HADevice device(mac, sizeof(mac));
 HAMqtt mqtt(client, device, 15);
 
-HASensor chickenguardDoorStatus("chickenguardDoorStatus");
-HASensorNumber chickenguardLDR("ChickenguardLDR");
-HASensorNumber chickenguardLDRavg("ChickenguardLDRAverage");
-HASensorNumber chickenguardTemperature("ChickenguardTemperature", HASensorNumber::PrecisionP1);
-HASensor chickenguardUpTime("chickenguardUpTime");
-HASensor chickenguardTimeNow("chickenguardTimeNow");
-HASensor chickenguardTimeOpened("chickenguardTimeOpened");
-HASensor chickenguardTimeClosed("chickenguardTimeClosed");
-HASensor chickenguardMonitor("chickenguardMonitor");
-HASensor chickenguardWaterStatus("chickenguardWaterStatus");
+HASensor chickenguardDoorStatus(MQTTprefix "DoorStatus");
+HASensorNumber chickenguardLDR(MQTTprefix "LDR");
+HASensorNumber chickenguardLDRavg(MQTTprefix "LDRAverage");
+HASensorNumber chickenguardTemperature(MQTTprefix "Temperature", HASensorNumber::PrecisionP1);
+HASensor chickenguardUpTime(MQTTprefix "UpTime");
+HASensor chickenguardTimeNow(MQTTprefix "TimeNow");
+HASensor chickenguardTimeOpened(MQTTprefix "TimeOpened");
+HASensor chickenguardTimeClosed(MQTTprefix "TimeClosed");
+HASensor chickenguardMonitor(MQTTprefix "Monitor");
+HASensor chickenguardWaterStatus(MQTTprefix "WaterStatus");
 
 void setupMQTT()
 {
-    device.setName("Chickenguard");
+    device.setName(MQTTid);
     device.setSoftwareVersion("1.0.0");
 
     device.enableSharedAvailability();
@@ -2029,7 +2412,11 @@ void setupMQTT()
     mqtt.onMessage(onMqttMessage);
     mqtt.onConnected(onMqttConnected);
 
-    mqtt.begin(BROKER_ADDR);
+#   if defined MQTTUSER && defined MQTTPASSWORD
+      mqtt.begin(BROKER_ADDR, MQTTUSER, MQTTPASSWORD);
+#   else
+      mqtt.begin(BROKER_ADDR);
+#   endif
 
     prevMQTTCheck = 0;
     cntMQTTCheck = 0;
@@ -2039,7 +2426,7 @@ void setupMQTT()
 
 void onMqttMessage(const char* topic, const uint8_t* payload, uint16_t length)
 {
-  if (strcmp(topic, "ChickenGuard/cmd") == 0)
+  if (strcmp(topic, MQTTid "/cmd") == 0)
   {
     String answer = "";
     for (int i = 0; i < length; i++)
@@ -2052,8 +2439,10 @@ void onMqttMessage(const char* topic, const uint8_t* payload, uint16_t length)
 void onMqttConnected()
 {
     printSerialln("Connected to the broker!");
+    printSerial("MQTTid: ");
+    printSerialln(MQTTid);
 
-    mqtt.subscribe("ChickenGuard/#");
+    mqtt.subscribe(MQTTid "/#");
 }
 
 #endif /* MQTTModule */
@@ -2103,7 +2492,8 @@ void setMQTTDoorStatus(char *msg)
 {
 #if defined MQTTModule
   chickenguardDoorStatus.setValue(msg);
-#elif defined MQTTDebug
+#endif
+#if defined MQTTDebug
   printSerial(">>>MQTT DoorStatus: ");
   printSerialln(msg);
   printSerialln("<<<");
@@ -2113,8 +2503,9 @@ void setMQTTDoorStatus(char *msg)
 void setMQTTLDR(int ldr)
 {
 #if defined MQTTModule
-  chickenguardLDR.setValue(ldr);
-#elif defined MQTTDebug
+  chickenguardLDR.setValue((int16_t)ldr);
+#endif
+#if defined MQTTDebug
   printSerial(">>>MQTT LDR: ");
   printSerialInt(ldr);
   printSerialln();
@@ -2125,8 +2516,9 @@ void setMQTTLDR(int ldr)
 void setMQTTLDRavg(int average)
 {
 #if defined MQTTModule
-  chickenguardLDRavg.setValue(average);
-#elif defined MQTTDebug
+  chickenguardLDRavg.setValue((int16_t)average);
+#endif
+#if defined MQTTDebug
   printSerial(">>>MQTT LDRAvg: ");
   printSerialInt(average);
   printSerialln();
@@ -2137,13 +2529,58 @@ void setMQTTLDRavg(int average)
 void setMQTTTemperature()
 {
 #if defined MQTTModule && defined ClockModule
-  chickenguardTemperature.setValue(readTemperature());
-#elif defined MQTTDebug
+  chickenguardTemperature.setValue((int16_t)readTemperature());
+#endif
+#if defined MQTTDebug
   printSerial(">>>MQTT Temperature: ");
   printSerialInt(readTemperature());
   printSerialln();
   printSerialln("<<<");
 #endif
+}
+
+void setMQTTMonitor(char *msg)
+{
+#if defined MQTTModule
+  if (strlen(msg) > 255) // it looks like that a message may not be longer than 255 characters
+    msg[255] = 0;
+  chickenguardMonitor.setValue(msg);
+#endif
+#if defined MQTTDebug
+  printSerial(">>>MQTT Monitor: ");
+  printSerialln(msg);
+  printSerialln("<<<");
+#endif
+}
+
+void setMQTTWaterStatus(char *msg)
+{
+#if defined MQTTModule
+  chickenguardWaterStatus.setValue(msg);
+#endif
+#if defined MQTTDebug
+  printSerial(">>>MQTT WaterStatus: ");
+  printSerialln(msg);
+  printSerialln("<<<");
+#endif
+}
+
+void setUpTime()
+{
+#if defined MQTTModule || defined MQTTDebug
+  char buf[50];
+
+  sprintf(buf, "%u:%02d:%02d:%02d", uptimeDays, (int)uptimeHours, (int)uptimeMinutes, (int)uptimeSeconds);
+#endif
+#if defined MQTTModule
+  chickenguardUpTime.setValue(buf);
+#endif
+#if defined MQTTDebug
+  printSerial(">>>MQTT UpTime: ");
+  printSerialln(buf);
+  printSerialln("<<<");
+#endif
+
 }
 
 void setMQTTTime()
@@ -2154,8 +2591,14 @@ void setMQTTTime()
 
 #if defined ClockModule
   // retrieve data from DS3231
-  readDS3231time(&second, &minute, &hour, NULL, NULL, NULL, NULL);
-  ShowTime(&hour, &minute, &second, buf);
+  if (hasClockModule)
+    readDS3231time(&second, &minute, &hour, NULL, NULL, NULL, NULL);
+  else
+    second = minute = hour = -1;
+  if (hour != -1)
+    ShowTime(&hour, &minute, &second, buf);
+  else
+    strcpy(buf, "Unknown");
 #else
   unsigned long timeNow = millis();
 
@@ -2185,41 +2628,31 @@ void setMQTTTime()
 #endif
 }
 
-void setMQTTMonitor(char *msg)
-{
-#if defined MQTTModule
-  if (strlen(msg) > 255) // it looks like that a message may not be longer than 255 characters
-    msg[255] = 0;
-  chickenguardMonitor.setValue(msg);
-#elif defined MQTTDebug
-  printSerial(">>>MQTT Monitor: ");
-  printSerialln(msg);
-  printSerialln("<<<");
-#endif
-}
-
-void setMQTTWaterStatus(char *msg)
-{
-#if defined MQTTModule
-  chickenguardWaterStatus.setValue(msg);
-#elif defined MQTTDebug
-  printSerial(">>>MQTT WaterStatus: ");
-  printSerialln(msg);
-  printSerialln("<<<");
-#endif
-}
-
-void setUpTime()
-{
-#if defined MQTTModule
-  char buf[50];
-
-  sprintf(buf, "%u:%02d:%02d:%02d", uptimeDays, (int)uptimeHours, (int)uptimeMinutes, (int)uptimeSeconds);
-  chickenguardUpTime.setValue(buf);
-#endif
-}
-
 #if defined NTPModule
+
+#include <time.h>
+
+const char timeServer[] = "time.nist.gov"; // time.nist.gov NTP server
+
+#if defined WIFI
+
+// see https://randomnerdtutorials.com/esp32-date-time-ntp-client-server-arduino/
+
+void InitUdp()
+{
+}
+
+struct tm *GetNTP()
+{
+  static struct tm time_info;
+
+  configTime(1 * 60 * 60 /* gmt + 1 */, 60 * 60 /* 1 hour difference between summer and winter */, timeServer);
+  if (getLocalTime(&time_info))
+    return &time_info;
+  return NULL;
+}
+
+#else
 
 // See https://docs.arduino.cc/tutorials/ethernet-shield-rev2/udp-ntp-client /* NTP */
 // See https://interface.fh-potsdam.de/prototyping-machines//hardware-prototypes/Boxnet/hardware_code/Write_boxes/DigitalClock_paul/ /* NTP */
@@ -2227,12 +2660,14 @@ void setUpTime()
 // See https://forum.arduino.cc/t/time-isnt-converted-correct-from-unix-time/1060600 /* UNIX_OFFSET */
 
 //#include <SPI.h>
+
 #include <EthernetUdp.h>
-#include <time.h>
+
+#if !defined UNIX_OFFSET
+# define UNIX_OFFSET 946684800UL
+#endif
 
 unsigned int localPort = 8888;       // local port to listen for UDP packets
-
-const char timeServer[] = "time.nist.gov"; // time.nist.gov NTP server
 
 const int NTP_PACKET_SIZE = 48; // NTP time stamp is in the first 48 bytes of the message
 
@@ -2309,8 +2744,13 @@ struct tm *GetNTP()
       // subtract seventy years:
       unsigned long epoch = secsSince1900 - seventyYears;
 
-      unsigned long unixTime = epoch - UNIX_OFFSET;
+#     if defined ESP32
+        time_t unixTime;
+#     else
+        unsigned long unixTime;
+#     endif
 
+      unixTime = epoch - UNIX_OFFSET;
       unixTime += 1L * 60L * 60L; // GMT+1
 
       struct tm *time_info;
@@ -2438,9 +2878,10 @@ boolean isDstEurope( int day, int month, int dow, int hour)
   return dst;
 }
 
-void printNTP()
+#endif
+
+void printNTP(struct tm *time_info)
 {
-  struct tm *time_info = GetNTP();
   if (time_info != NULL)
   {
     char buf[20];
@@ -2460,17 +2901,21 @@ void SyncDateTime()
   for (int i = 0; i < 60; i++)
   {
     struct tm *time_info = GetNTP();
+    printNTP(time_info);
     if (time_info != NULL)
     {
 #if defined ClockModule
-      setDS3231time(time_info->tm_sec, time_info->tm_min, time_info->tm_hour, 0, time_info->tm_mday, 1 + time_info->tm_mon, 1900 + time_info->tm_year - 2000);
-      printDS3231time();
+      if (hasClockModule)
+      {
+        setDS3231time(time_info->tm_sec, time_info->tm_min, time_info->tm_hour, 0, time_info->tm_mday, 1 + time_info->tm_mon, 1900 + time_info->tm_year - 2000);
+        printDS3231time();
+      }
 #else
       msTime = millis();
 
       dayTime = time_info->tm_mday;
       monthTime = 1 + time_info->tm_mon;
-      yearTime = 1900 + time_info->tm_year;
+      yearTime = 1900 + time_info->tm_year - 2000;
       hourTime = time_info->tm_hour;
       minuteTime = time_info->tm_min;
       secondsTime = time_info->tm_sec;
@@ -2492,11 +2937,16 @@ void SyncDateTime()
 
 #define EEPROMMagic 25687
 
+#define EEPROM_SIZE (1 + sizeof(changeableData) / sizeof(*changeableData) * sizeof(int))
+
 void readChangeableData()
 {
   int address = 0;
   int value;
 
+#if defined ESP32
+  EEPROM.begin(EEPROM_SIZE);
+#endif
   EEPROM.get(address, value);
   if (value == EEPROMMagic)
   {
@@ -2527,6 +2977,9 @@ void writeChangeableData()
     value = *(changeableData[i].variable);
     EEPROM.put(address, value);
   }
+#if defined ESP32
+  EEPROM.commit();
+#endif
 }
 
 #endif /* EEPROMModule */
