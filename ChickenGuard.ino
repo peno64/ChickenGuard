@@ -119,7 +119,11 @@ BluetoothSerial SerialBT;
 # undef NTPModule                   // NTP can't work without ethernet
 #endif
 
-#define postfix "2"
+#if defined ESP32
+# define postfix "e"
+#else
+# define postfix ""
+#endif
 
 #define myName "ChickenGuard" postfix
 
@@ -211,6 +215,7 @@ int closeWaitTime1;                 // after this much milliseconds, stop closin
 int closeWaitTime2;
 int closeWaitTime3;
 
+bool startLoop;
 int status = 0;                     // status. 0 = all ok
 int toggle = 0;                     // led blinking toggle
 bool logit = false;                 // log to monitor
@@ -440,7 +445,25 @@ void setup(void)
     SerialBT.setTimeout(60000);
 #endif
 
-  printSerialln("Chicken hatch 15/06/2024. Copyright peno");
+  printSerialln("Chicken hatch 30/06/2024. Copyright peno");
+
+#if defined ESP32
+
+  printf("ESP32 Partition table:\n\n");
+
+  printf("| Type | Sub |  Offset  |   Size   |       Label      |\n");
+  printf("| ---- | --- | -------- | -------- | ---------------- |\n");
+
+  esp_partition_iterator_t pi = esp_partition_find(ESP_PARTITION_TYPE_ANY, ESP_PARTITION_SUBTYPE_ANY, NULL);
+  if (pi != NULL) {
+    do {
+      const esp_partition_t* p = esp_partition_get(pi);
+      printf("|  %02x  | %02x  | 0x%06X | 0x%06X | %-16s |\r\n",
+        p->type, p->subtype, p->address, p->size, p->label);
+    } while (pi = (esp_partition_next(pi)));
+  }
+
+#endif // ESP32
 
   setChangeableData();
 
@@ -459,6 +482,10 @@ void setup(void)
   if (motorPWMPin != 0)
     pinMode(motorPWMPin, OUTPUT);
   pinMode(ldrPin, INPUT);
+#if ESP32
+  analogSetAttenuation(ADC_11db);
+  analogReadResolution(10);  // Set resolution to 10 bits
+#endif
   pinMode(magnetPin, INPUT_PULLUP);
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
@@ -501,6 +528,8 @@ void setup(void)
     setMQTTDoorStatus("Setup");
     setMQTTWaterStatus("Setup");
     setMQTTMonitor("Setup");
+    setMQTTUpTime();
+    setMQTTTemperature();
     loopEthernet();
     loopMQTT(true);
 # else
@@ -535,9 +564,10 @@ void setup(void)
   LightMeasurement(true); // fill the whole light measurement array with the current light value
 
   bool flip = false;
+  startLoop = false;
 
   // First 60 seconds chance to enter commands
-  for (int i = 59; i >= 0; i--)
+  for (int i = 59; (i >= 0) && (!startLoop); i--)
   {
     ProcessWater();
 
@@ -552,6 +582,10 @@ void setup(void)
     info(i, logit);
 
     setMQTTTime();
+
+    updateUpTime();
+
+    setMQTTUpTime();
 
     switch (Command(true))
     {
@@ -582,8 +616,6 @@ void setup(void)
 
   measureEverySecond = measureEverySeconds;
   PrevTime = PrevSyncTime = millis();
-
-  uptimeDays = uptimeHours = uptimeMinutes = uptimeSeconds = 0;
 }
 
 void SetStatusLed(bool on)
@@ -784,10 +816,17 @@ void Open(bool log)
 
 uint16_t ReadLDR()
 {
-  uint16_t ldr = analogRead(ldrPin);
-# if defined ESP32
-    ldr >>= 2;
-# endif
+  const int numSamples = 10;
+  int total = 0;
+
+  for (int i = 0; i < numSamples; i++) {
+    if (i > 0)
+      delay(10);  // Small delay between samples
+    total += analogRead(ldrPin);
+  }
+
+  uint16_t ldr = (uint16_t)(total / numSamples);
+
   return ldr;
 }
 
@@ -999,6 +1038,23 @@ bool MayOpen(int deltaMinutes)
   return (hour > startHourOpen1 || (hour == startHourOpen1 && minute >= startMinuteOpen1));
 }
 
+void updateUpTime()
+{
+  if (++uptimeSeconds == 60)
+  {
+    uptimeSeconds = 0;
+    if (++uptimeMinutes == 60)
+    {
+      uptimeMinutes = 0;
+      if (++uptimeHours == 24)
+      {
+        uptimeHours = 0;
+        uptimeDays++;
+      }
+    }
+  }
+}
+
 void loop(void)
 {
   loopEthernet();
@@ -1011,21 +1067,9 @@ void loop(void)
   {
     PrevTime = CurrentTime;
 
-    if (++uptimeSeconds == 60)
-    {
-      uptimeSeconds = 0;
-      if (++uptimeMinutes == 60)
-      {
-        uptimeMinutes = 0;
-        if (++uptimeHours == 24)
-        {
-          uptimeHours = 0;
-          uptimeDays++;
-        }
-      }
-    }
+    updateUpTime();
 
-    setUpTime();
+    setMQTTUpTime();
 
     ProcessWater();
 
@@ -1671,6 +1715,11 @@ void Command(String answer, bool wait, bool start)
       setMQTTMonitor("");
   }
 
+  else if (answer.substring(0, 5) == "START") // start
+  {
+    startLoop = true;
+  }
+
   else if (answer.substring(0, 1) == "S") // reset status
   {
     status = answer.substring(1).toInt();
@@ -1725,6 +1774,13 @@ void Command(String answer, bool wait, bool start)
   else if (answer.substring(0, 2) == "IP")
   {
     printLocalIP();
+
+    if (logit && wait)
+      WaitForInput("Press enter to continue");
+  }
+  else if (answer.substring(0, 3) == "MAC")
+  {
+    printLocalMAC();
 
     if (logit && wait)
       WaitForInput("Press enter to continue");
@@ -1793,6 +1849,7 @@ void Command(String answer, bool wait, bool start)
 #endif
 #if defined EthernetModule
     printSerialln("IP: Print IP address");
+    printSerialln("MAC: Print MAC address");
     printSerialln("IS: Show Ethernet status");
 #endif
     printSerialln("RESET: Reset Arduino");
@@ -2146,6 +2203,8 @@ void setupEthernet()
   if (!hasEthernet)
     printSerial(ret);
   printSerialln();
+  printSerial("MAC: ");
+  printLocalMAC();
   printSerial("IP: ");
   printLocalIP();
 
@@ -2199,6 +2258,24 @@ void printLocalIP()
 
   printSerialln(sip);
   setMQTTMonitor(sip);
+#endif
+}
+
+void printLocalMAC()
+{
+  byte mac[6] = { 0, 0, 0, 0, 0, 0 };
+#if defined EthernetModule
+# if defined WIFI
+  WiFi.macAddress(mac);
+#else
+  Ethernet.MACAddress(mac);
+#endif
+
+  char buf[19];
+  sprintf(buf, "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
+  printSerialln(buf);
+  setMQTTMonitor(buf);
 #endif
 }
 
@@ -2565,7 +2642,7 @@ void setMQTTWaterStatus(char *msg)
 #endif
 }
 
-void setUpTime()
+void setMQTTUpTime()
 {
 #if defined MQTTModule || defined MQTTDebug
   char buf[50];
