@@ -58,6 +58,7 @@
 #endif
 
 #include <Arduino.h>
+#include <stdlib.h>
 
 /*
   Content of secret.h:
@@ -126,6 +127,8 @@ BluetoothSerial SerialBT;
 #endif
 
 #define myName "ChickenGuard" postfix
+
+#define VERSIONSTRING myName " 02/07/2024. Copyright peno"
 
 #if defined MQTTModule
 
@@ -445,7 +448,7 @@ void setup(void)
     SerialBT.setTimeout(60000);
 #endif
 
-  printSerialln("Chicken hatch 30/06/2024. Copyright peno");
+  printSerialln(VERSIONSTRING);
 
 #if defined ESP32
 
@@ -2309,6 +2312,115 @@ void printEthernetStatus()
 
 #define UPDATEPAGE "/jsdlmkfjcnsdjkqcfjdlkckslcndsjfsdqfjksd" // a name that nobody can figure out
 
+#if 0
+  if (digitalRead(emptyPin)) // empty open
+  {
+    // blink red
+    blinkEmpty = !blinkEmpty;
+    digitalWrite(ledEmptyPin, blinkEmpty ? HIGH : LOW);
+    digitalWrite(ledNotEmptyPin, LOW);
+    setMQTTWaterStatus("Empty");
+  }
+  else if (digitalRead(almostEmptyPin)) // almost empty open
+  {
+    // blink red/green
+    blinkEmpty = !blinkEmpty;
+    digitalWrite(ledEmptyPin, blinkEmpty ? HIGH : LOW);
+    digitalWrite(ledNotEmptyPin, blinkEmpty ? LOW : HIGH);
+    setMQTTWaterStatus("Low");
+  }
+  else
+  {
+    // green
+    digitalWrite(ledNotEmptyPin, HIGH);
+    digitalWrite(ledEmptyPin, LOW);
+    setMQTTWaterStatus("Ok");
+  }
+#endif
+
+#if 0
+char *homeContent()
+{
+  static int i = 0;
+  static char buf[5000];
+
+  sprintf(buf,
+"<form method='POST' action='#' enctype='multipart/form-data' id='upload_form'>"
+"</form>"
+"<head>"
+"<meta http-equiv='refresh' content='1'>"
+"</head>"
+"<body>"
+"Water status: %d"
+"</body>", ++i);
+
+return buf;
+}
+#endif
+
+#if 1
+
+#define HOMEPARTSTART "<form method='POST' action='#' enctype='multipart/form-data' id='upload_form'>" \
+"</form>" \
+"<head>" \
+"<meta http-equiv='refresh' content='1'>" \
+"</head>" \
+"<body>"
+#define HOMEPARTWATERSTATUS "Water status: "
+#define HOMEPARTWATERSTATUSEMPTY "Empty"
+#define HOMEPARTWATERSTATUSLOW "Low"
+#define HOMEPARTWATERSTATUSOK "Ok"
+#define HOMEPARTNL "<br>"
+#define HOMEPARTEND "</body>"
+
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+
+char *homeContent()
+{
+  static char buf[
+    (sizeof(HOMEPARTSTART) - 1) +
+    (sizeof(HOMEPARTWATERSTATUS) - 1) + (MAX(MAX(sizeof(HOMEPARTWATERSTATUSEMPTY), sizeof(HOMEPARTWATERSTATUSLOW)), sizeof(HOMEPARTWATERSTATUSOK)) - 1) + (sizeof(HOMEPARTNL) - 1) +
+    (sizeof(HOMEPARTEND) - 1) +
+    1];
+
+  strcpy(buf, HOMEPARTSTART);
+
+  strcat(buf, HOMEPARTWATERSTATUS);
+  if (digitalRead(emptyPin))
+    strcat(buf, HOMEPARTWATERSTATUSEMPTY);
+  else if (digitalRead(almostEmptyPin))
+    strcat(buf, HOMEPARTWATERSTATUSLOW);
+  else
+    strcat(buf, HOMEPARTWATERSTATUSOK);
+  strcat(buf, HOMEPARTNL);
+
+  strcat(buf, HOMEPARTEND);
+
+  return buf;
+}
+#endif
+
+#if 0
+char *homeContent()
+{
+  return
+"<body>"
+VERSIONSTRING
+"</body>";
+}
+#endif
+
+#if 0
+char *homeContent()
+{
+  static char buf[50];
+
+  sprintf(buf, "sizeof(homePart1)=%d", sizeof(homePart1));
+  return buf;
+}
+#endif
+
+
 const char *uploadContent =
 "<script src='https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js'></script>"
 "<form method='POST' action='#' enctype='multipart/form-data' id='upload_form'>"
@@ -2356,14 +2468,24 @@ void setupOTA()
 {
   /*use mdns for host name resolution*/
   if (!MDNS.begin(host)) { //http://esp32.local
-    Serial.println("Error setting up MDNS responder!");
+    printSerialln("Error setting up MDNS responder!");
     while (1) {
       delay(1000);
     }
   }
-  Serial.println("mDNS responder started");
+  printSerialln("mDNS responder started");
+ /*return home */
+ server.on("/", HTTP_GET, []() {
+    // See https://github.com/espressif/arduino-esp32/blob/master/libraries/WebServer/examples/HttpBasicAuth/HttpBasicAuth.ino
+    if (!server.authenticate(UPLOADUSER, UPLOADPASSWORD)) {
+      return server.requestAuthentication();
+    }
+    server.sendHeader("Connection", "close");
+    server.send(200, "text/html", homeContent());
+  });
+
   /*return upload page which is stored in uploadContent */
-  server.on("/", HTTP_GET, []() {
+  server.on("/upload", HTTP_GET, []() {
     // See https://github.com/espressif/arduino-esp32/blob/master/libraries/WebServer/examples/HttpBasicAuth/HttpBasicAuth.ino
     if (!server.authenticate(UPLOADUSER, UPLOADPASSWORD)) {
       return server.requestAuthentication();
