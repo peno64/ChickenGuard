@@ -128,7 +128,7 @@ BluetoothSerial SerialBT;
 
 #define myName "ChickenGuard" postfix
 
-#define VERSIONSTRING myName " 02/07/2024. Copyright peno"
+#define VERSIONSTRING "09/07/2024. Copyright peno"
 
 #if defined MQTTModule
 
@@ -448,7 +448,7 @@ void setup(void)
     SerialBT.setTimeout(60000);
 #endif
 
-  printSerialln(VERSIONSTRING);
+  printSerialln(myName " " VERSIONSTRING);
 
 #if defined ESP32
 
@@ -2365,7 +2365,11 @@ return buf;
 "<head>" \
 "<meta http-equiv='refresh' content='1'>" \
 "</head>" \
-"<body>"
+"<body>" \
+myName " (current version " VERSIONSTRING ")" \
+"<br>" \
+"<br>"
+
 #define HOMEPARTWATERSTATUS "Water status: "
 #define HOMEPARTWATERSTATUSEMPTY "Empty"
 #define HOMEPARTWATERSTATUSLOW "Low"
@@ -2405,25 +2409,17 @@ char *homeContent()
 {
   return
 "<body>"
-VERSIONSTRING
+myName " - current version " VERSIONSTRING
 "</body>";
 }
 #endif
 
-#if 0
-char *homeContent()
-{
-  static char buf[50];
-
-  sprintf(buf, "sizeof(homePart1)=%d", sizeof(homePart1));
-  return buf;
-}
-#endif
-
-
 const char *uploadContent =
 "<script src='https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js'></script>"
 "<form method='POST' action='#' enctype='multipart/form-data' id='upload_form'>"
+   "Update firmware " myName " (current version " VERSIONSTRING ")"
+   "<br>"
+   "<br>"
    "<input type='file' name='update'>"
    "<br>"
    "<br>"
