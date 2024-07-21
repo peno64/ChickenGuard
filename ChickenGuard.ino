@@ -128,7 +128,7 @@ BluetoothSerial SerialBT;
 
 #define myName "ChickenGuard" postfix
 
-#define VERSIONSTRING "09/07/2024. Copyright peno"
+#define VERSIONSTRING "21/07/2024. Copyright peno"
 
 #if defined MQTTModule
 
@@ -191,6 +191,8 @@ int ledNotEmptyPin = LEDNOTEMPTYPIN;            // green LED - enough water
 int ledEmptyPin = LEDEMPTYPIN;                  // red LED - (almost) empty water
 const int almostEmptyPin = ALMOSTEMPTYPIN;      // almost empty switch
 const int emptyPin = EMPTYPIN;                  // empty switch
+
+int setupWaitSeconds = 60;
 
 /* Up time */
 unsigned int uptimeDays = 0;
@@ -306,6 +308,7 @@ struct
   { "minuteClosed", &minuteClosed, 0 },
   { "secondClosed", &secondClosed, 0 },
 #endif
+  { "setupWait", &setupWaitSeconds, 60 },
 };
 
 void(* resetFunc) (void) = 0;       //declare reset function at address 0
@@ -390,6 +393,7 @@ void showChangeableData(char *name)
 {
   char buf[50];
   bool found = false;
+  int l = 0;
 
   for (int i = 0; i < sizeof(changeableData) / sizeof(*changeableData); i++)
   {
@@ -399,6 +403,7 @@ void showChangeableData(char *name)
       if (name != NULL && *name)
         setMQTTMonitor(buf);
       printSerialln(buf);
+      l += strlen(buf) + 2;
       found = true;
     }
   }
@@ -406,6 +411,24 @@ void showChangeableData(char *name)
   {
     printSerialln("Variable not found in changeable data");
     setMQTTMonitor("Variable not found in changeable data");
+  }
+  else if (name == NULL)
+  {
+    char *buf = (char *) malloc(l * sizeof(char));
+
+    if (buf != NULL)
+    {
+      *buf = 0;
+      for (int i = 0; i < sizeof(changeableData) / sizeof(*changeableData); i++)
+      {
+        if (*buf)
+          strcat(buf, ", ");
+        sprintf(buf + strlen(buf), "%s = %d", changeableData[i].name, *(changeableData[i].variable));
+      }
+      setMQTTMonitor(buf);
+
+      free(buf);
+    }
   }
 }
 
@@ -570,7 +593,7 @@ void setup(void)
   startLoop = false;
 
   // First 60 seconds chance to enter commands
-  for (int i = 59; (i >= 0) && (!startLoop); i--)
+  for (int i = setupWaitSeconds - 1; (i >= 0) && (!startLoop); i--)
   {
     ProcessWater();
 
@@ -611,7 +634,8 @@ void setup(void)
 
   SetLEDOpenClosed();
 
-  Close(false); // Via the magnet switch we know for sure that the door is closed hereafter
+  if (setupWaitSeconds != 0)
+    Close(false); // Via the magnet switch we know for sure that the door is closed hereafter
 
   LightMeasurement(true); // fill the whole light measurement array with the current light value
 
@@ -2541,6 +2565,7 @@ void loopOTA()
 const unsigned long waitReconnectMQTT = 5L * 60L * 1000L; /* 5 minutes */
 const int maxDurationMQTT = 900; /* 0.9 seconds */
 
+bool setupMQTTDone = false;
 unsigned long prevMQTTCheck = 0;
 int cntMQTTCheck = 0;
 
@@ -2615,6 +2640,7 @@ void setupMQTT()
 
     prevMQTTCheck = 0;
     cntMQTTCheck = 0;
+    setupMQTTDone = true;
 
     printSerialln("Done MQTT");
 }
@@ -2686,7 +2712,8 @@ void loopMQTT(bool force)
 void setMQTTDoorStatus(char *msg)
 {
 #if defined MQTTModule
-  chickenguardDoorStatus.setValue(msg);
+  if (setupMQTTDone)
+    chickenguardDoorStatus.setValue(msg);
 #endif
 #if defined MQTTDebug
   printSerial(">>>MQTT DoorStatus: ");
@@ -2698,7 +2725,8 @@ void setMQTTDoorStatus(char *msg)
 void setMQTTLDR(int ldr)
 {
 #if defined MQTTModule
-  chickenguardLDR.setValue((int16_t)ldr);
+  if (setupMQTTDone)
+    chickenguardLDR.setValue((int16_t)ldr);
 #endif
 #if defined MQTTDebug
   printSerial(">>>MQTT LDR: ");
@@ -2711,7 +2739,8 @@ void setMQTTLDR(int ldr)
 void setMQTTLDRavg(int average)
 {
 #if defined MQTTModule
-  chickenguardLDRavg.setValue((int16_t)average);
+  if (setupMQTTDone)
+    chickenguardLDRavg.setValue((int16_t)average);
 #endif
 #if defined MQTTDebug
   printSerial(">>>MQTT LDRAvg: ");
@@ -2724,7 +2753,8 @@ void setMQTTLDRavg(int average)
 void setMQTTTemperature()
 {
 #if defined MQTTModule && defined ClockModule
-  chickenguardTemperature.setValue((int16_t)readTemperature());
+  if (setupMQTTDone)
+    chickenguardTemperature.setValue((int16_t)readTemperature());
 #endif
 #if defined MQTTDebug
   printSerial(">>>MQTT Temperature: ");
@@ -2737,9 +2767,10 @@ void setMQTTTemperature()
 void setMQTTMonitor(char *msg)
 {
 #if defined MQTTModule
-  if (strlen(msg) > 255) // it looks like that a message may not be longer than 255 characters
+  if (strlen(msg) > 255) // it looks like that a message may not be longer than 255 characters (in home assistant)
     msg[255] = 0;
-  chickenguardMonitor.setValue(msg);
+  if (setupMQTTDone)
+    chickenguardMonitor.setValue(msg);
 #endif
 #if defined MQTTDebug
   printSerial(">>>MQTT Monitor: ");
@@ -2751,7 +2782,8 @@ void setMQTTMonitor(char *msg)
 void setMQTTWaterStatus(char *msg)
 {
 #if defined MQTTModule
-  chickenguardWaterStatus.setValue(msg);
+  if (setupMQTTDone)
+    chickenguardWaterStatus.setValue(msg);
 #endif
 #if defined MQTTDebug
   printSerial(">>>MQTT WaterStatus: ");
@@ -2768,7 +2800,8 @@ void setMQTTUpTime()
   sprintf(buf, "%u:%02d:%02d:%02d", uptimeDays, (int)uptimeHours, (int)uptimeMinutes, (int)uptimeSeconds);
 #endif
 #if defined MQTTModule
-  chickenguardUpTime.setValue(buf);
+  if (setupMQTTDone)
+    chickenguardUpTime.setValue(buf);
 #endif
 #if defined MQTTDebug
   printSerial(">>>MQTT UpTime: ");
@@ -2809,7 +2842,8 @@ void setMQTTTime()
 #else
   ShowTime(msOpened, timeNow, buf);
 #endif
-  chickenguardTimeOpened.setValue(buf);
+  if (setupMQTTDone)
+    chickenguardTimeOpened.setValue(buf);
 
 #if defined ClockModule
   if (hourClosed != 0 || minuteClosed != 0 || secondClosed != 0)
@@ -2819,7 +2853,8 @@ void setMQTTTime()
 #else
   ShowTime(msClosed, timeNow, buf);
 #endif
-  chickenguardTimeClosed.setValue(buf);
+  if (setupMQTTDone)
+    chickenguardTimeClosed.setValue(buf);
 #endif
 }
 
