@@ -49,6 +49,12 @@
 
   When MQTT is enabled, the system can be monitored via Home Assistant, adding a convenient touch to this chicken guard.
 
+  MQTT messages can also be monitored via following commands:
+  First do:
+    ./mosquitto_sub -h 192.168.1.121 -v -t '#' >/tmp/mqtt.txt
+  Search for Chickenguard and from this the following command can be extracted. For example:
+    ./mosquitto_sub -h 192.168.1.121 -v -t 'aha/543441303033/ChickenguardUpTime/stat_t' -t 'aha/543441303033/ChickenguardTimeNow/stat_t'
+
 */
 
 //#define WOKWI // simulator https://wokwi.com/
@@ -83,11 +89,13 @@ or when no password for MQTT
 
 #if defined ESP32_DEVKIT_V1
 #define WIFI
-#endif
+#endif // ESP32_DEVKIT_V1
 #if defined ESP32_DEVKIT_V1 && !defined WOKWI
 #define OTA
 #define SERIALBT
-#endif // ESP32_DEVKIT_V1
+#endif // ESP32_DEVKIT_V1 && !defined WOKWI
+
+#define OTETHERNET
 
 #if defined SERIALBT
 
@@ -122,13 +130,25 @@ BluetoothSerial SerialBT;
 
 #if defined ESP32
 # define postfix "e"
+# define postfixc 'e'
 #else
 # define postfix ""
+# undef postixc
 #endif
+
+#if defined OTETHERNET
+#undef postfix
+#define postfix "4"
+#undef postfixc
+#define postfixc '4'
+#undef ClockModule
+#undef SERIAL1
+//#undef NTPModule
+#endif // OTETHERNET
 
 #define myName "ChickenGuard" postfix
 
-#define VERSIONSTRING "21/07/2024. Copyright peno"
+#define VERSIONSTRING "31/07/2024. Copyright peno"
 
 #if defined MQTTModule
 
@@ -164,7 +184,7 @@ logbook:
 # define LEDEMPTYPIN 13
 # define ALMOSTEMPTYPIN 35
 # define EMPTYPIN 36
-#else
+#else // !ESP32_DEVKIT_V1
 # define MOTORCLOSEPIN 4
 # define MOTOROPENPIN 5
 # define MOTORPWMPIN 44 // 490 Hz (4 and 13 are 980 Hz but 490 seems to work alot better) - See https://www.arduino.cc/reference/en/language/functions/analog-io/analogwrite/
@@ -176,7 +196,7 @@ logbook:
 # define LEDEMPTYPIN 8
 # define ALMOSTEMPTYPIN 11
 # define EMPTYPIN 12
-#endif
+#endif // ESP32_DEVKIT_V1
 
 const int motorClosePin = MOTORCLOSEPIN;        // motor turns one way to close the door
 const int motorOpenPin = MOTOROPENPIN;          // motor turns other way to open the door
@@ -247,7 +267,7 @@ int secondOpened = 0;               // second of last door open
 int hourClosed = 0;                 // hour of last door close
 int minuteClosed = 0;               // hour of last door close
 int secondClosed = 0;               // hour of last door close
-#else
+#else // !ClockModule
 unsigned long msTime = 0;           // millis() value of set time
 int dayTime = 0;                    // set day at msTime
 int monthTime = 0;                  // set month at msTime
@@ -258,7 +278,7 @@ int secondsTime = 0;                // set seconds at msTime
 
 unsigned long msOpened = 0;         // millis() value of last door open
 unsigned long msClosed = 0;         // millis() value of last door close
-#endif
+#endif // ClockModule
 
 unsigned long timePrevReset = 0;    // time when a previous open now or close now was done
 bool openPrevReset;
@@ -311,7 +331,7 @@ struct
   { "setupWait", &setupWaitSeconds, 60 },
 };
 
-void(* resetFunc) (void) = 0;       //declare reset function at address 0
+void (*resetFunc) (void) = 0;       //declare reset function at address 0
 
 #if defined resetPin
 
@@ -334,7 +354,7 @@ void DoReset()
   resetFunc(); // try a soft reset
 }
 
-#else
+#else // !resetPin
 
 #define SetupReset()
 
@@ -344,7 +364,7 @@ void DoReset()
 #define DoReset() resetFunc()
 #endif
 
-#endif
+#endif // resetPin
 
 void printSerial(char *data)
 {
@@ -573,6 +593,10 @@ void setup(void)
   printSerialln("NTP module not enabled");
 #endif
 
+#if defined OTETHERNET
+    setupOTETHERNET();
+#endif
+
 # if defined WOKWI
     delay(5000);
 # endif
@@ -604,6 +628,8 @@ void setup(void)
 
     loopEthernet();
     loopMQTT(false);
+    loopOTA();
+    loopOTETHERNET();
 
     info(i, logit);
 
@@ -616,7 +642,7 @@ void setup(void)
     switch (Command(true))
     {
       case 1:
-        i = 60; // When a command was given then wait again 60 seconds
+        i = setupWaitSeconds; // When a command was given then wait again 60 seconds
         break;
       case 2:
         i = 0;
@@ -1087,6 +1113,7 @@ void loop(void)
   loopEthernet();
   loopMQTT(false);
   loopOTA();
+  loopOTETHERNET();
 
   unsigned long CurrentTime = millis();
 
@@ -1296,7 +1323,7 @@ void ShowTime(int *hour, int *minute, int *second)
 {
   ShowTime(hour, minute, second, NULL);
 }
-#endif
+#endif // ClockModule
 
 void GetTime(int &hour, int &minute, int &second)
 {
@@ -1435,7 +1462,8 @@ void ShowTime(unsigned long time, unsigned long timeNow)
 {
   ShowTime(time, timeNow, NULL);
 }
-#endif
+
+#endif // !ClockModule
 
 String WaitForInput(char *question)
 {
@@ -1583,7 +1611,7 @@ void Command(String answer, bool wait, bool start)
 
     if (logit && wait)
       WaitForInput("Press enter to continue");
-#endif
+#endif // !ClockModule
   }
 
   else if (answer.substring(0, 2) == "CT" && hasClockModule) // current date/time clock module: dd/mm/yy hh:mm:ss
@@ -1606,7 +1634,7 @@ void Command(String answer, bool wait, bool start)
 
     if (logit && wait)
       WaitForInput("Press enter to continue");
-#endif
+#endif // ClockModule
   }
 
   else if (answer.substring(0, 1) == "O") // open
@@ -2119,7 +2147,7 @@ float readTemperature()
     temperature = 0.0;
   return temperature;
 }
-#endif /* ClockModule */
+#endif // ClockModule
 
 #if defined EthernetModule
 
@@ -2148,8 +2176,13 @@ unsigned long prevEthernetCheck = 0;
 //#include <UIPEthernet.h> // uses a bit more memory
 #else
 // Mega
+#if defined OTETHERNET
+#include <SPI.h>
+#endif
 #include <Ethernet.h> // does not work with an Arduino nano and its internet shield because it uses ENC28J60 which is a different instruction set
-
+#if defined OTETHERNET
+#include <ArduinoOTA.h>
+#endif
 #endif
 
 #if defined WIFI
@@ -2160,13 +2193,17 @@ byte mac[] = { 0xa8, 0x42, 0xe3, 0x9e, 0xb0, 0x00 };
 
 #else
 
+#if postfixc == '4'
+byte mac[] = { 0x54, 0x34, 0x41, 0x30, 0x30, 0x33 };
+#else
 byte mac[] = { 0x54, 0x34, 0x41, 0x30, 0x30, 0x32 };
+#endif
 
 EthernetClient client;
 
 #endif
 
-#endif /* EthernetModule */
+#endif // EthernetModule
 
 void setupEthernet()
 {
@@ -2546,12 +2583,35 @@ void setupOTA()
   server.begin();
 }
 
-#endif
+#endif // OTA
 
 void loopOTA()
 {
 #if defined OTA
   server.handleClient();
+#endif
+}
+
+#if defined OTETHERNET
+void setupOTETHERNET()
+{
+  //printSerialln("setupOTETHERNET");
+  ArduinoOTA.begin(Ethernet.localIP(), "Arduino", "password", InternalStorage);
+}
+
+void endOTETHERNET()
+{
+  //printSerialln("endOTETHERNET");
+  ArduinoOTA.end();
+}
+
+#endif // OTETHERNET
+
+void loopOTETHERNET()
+{
+#if defined OTETHERNET
+  //printSerialln("loopOTETHERNET");
+  ArduinoOTA.poll();
 #endif
 }
 
@@ -2666,7 +2726,7 @@ void onMqttConnected()
     mqtt.subscribe(MQTTid "/#");
 }
 
-#endif /* MQTTModule */
+#endif // MQTTModule
 
 void loopMQTT(bool force)
 {
@@ -2706,7 +2766,7 @@ void loopMQTT(bool force)
     }
   }
 
-#endif
+#endif // MQTTModule
 }
 
 void setMQTTDoorStatus(char *msg)
@@ -2882,7 +2942,7 @@ struct tm *GetNTP()
   return NULL;
 }
 
-#else
+#else // !WIFI
 
 // See https://docs.arduino.cc/tutorials/ethernet-shield-rev2/udp-ntp-client /* NTP */
 // See https://interface.fh-potsdam.de/prototyping-machines//hardware-prototypes/Boxnet/hardware_code/Write_boxes/DigitalClock_paul/ /* NTP */
@@ -2938,6 +2998,10 @@ void sendNTPpacket(const char * address)
 struct tm *GetNTP()
 {
   int size;
+
+#if defined OTETHERNET
+    endOTETHERNET();
+#endif
 
   while ((size = Udp.parsePacket()) > 0)
   {
@@ -2998,6 +3062,10 @@ struct tm *GetNTP()
       return time_info;
     }
   }
+
+#if defined OTETHERNET
+    setupOTETHERNET();
+#endif
 
   return NULL;
 }
@@ -3108,7 +3176,7 @@ boolean isDstEurope( int day, int month, int dow, int hour)
   return dst;
 }
 
-#endif
+#endif // WIFI
 
 void printNTP(struct tm *time_info)
 {
@@ -3154,12 +3222,14 @@ void SyncDateTime()
       printSerialln();
 #endif
 
-      break;
+      return;
     }
   }
+
+  DoReset();
 }
 
-#endif /* NTPModule */
+#endif // NTPModule
 
 #if defined EEPROMModule
 
@@ -3212,4 +3282,4 @@ void writeChangeableData()
 #endif
 }
 
-#endif /* EEPROMModule */
+#endif // EEPROMModule
