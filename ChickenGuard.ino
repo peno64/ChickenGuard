@@ -143,12 +143,15 @@ BluetoothSerial SerialBT;
 #define postfixc '4'
 #undef ClockModule
 #undef SERIAL1
+//#define NO_OTA_PORT
 //#undef NTPModule
 #endif // OTETHERNET
 
+//#undef OTETHERNET
+
 #define myName "ChickenGuard" postfix
 
-#define VERSIONSTRING "31/07/2024. Copyright peno"
+#define VERSIONSTRING "26/08/2024. Copyright peno"
 
 #if defined MQTTModule
 
@@ -546,8 +549,12 @@ void setup(void)
   pinMode(emptyPin, INPUT_PULLUP);
 
   // red
+
   digitalWrite(ledOpenedPin, HIGH);
   digitalWrite(ledClosedPin, LOW);
+
+  digitalWrite(ledEmptyPin, HIGH);
+  digitalWrite(ledNotEmptyPin, LOW);
 
 # if defined EthernetModule
     setupEthernet();
@@ -557,8 +564,12 @@ void setup(void)
 # endif
 
   // yellow
+
   digitalWrite(ledOpenedPin, HIGH);
   digitalWrite(ledClosedPin, HIGH);
+
+  digitalWrite(ledNotEmptyPin, HIGH);
+  digitalWrite(ledEmptyPin, HIGH);
 
 # if defined OTA
     setupOTA();
@@ -602,8 +613,12 @@ void setup(void)
 # endif
 
   // green
+
   digitalWrite(ledOpenedPin, LOW);
   digitalWrite(ledClosedPin, HIGH);
+
+  digitalWrite(ledEmptyPin, LOW);
+  digitalWrite(ledNotEmptyPin, HIGH);
 
   SetStatusLed(false);
 
@@ -619,12 +634,15 @@ void setup(void)
   // First 60 seconds chance to enter commands
   for (int i = setupWaitSeconds - 1; (i >= 0) && (!startLoop); i--)
   {
-    ProcessWater();
+    //ProcessWater();
 
     flip = !flip;
 
     digitalWrite(ledOpenedPin, flip ? LOW : HIGH);
     digitalWrite(ledClosedPin, flip ? HIGH : LOW);
+
+    digitalWrite(ledEmptyPin, flip ? LOW : HIGH);
+    digitalWrite(ledNotEmptyPin, flip ? HIGH : LOW);
 
     loopEthernet();
     loopMQTT(false);
@@ -658,6 +676,7 @@ void setup(void)
 
   printSerialln("Starting");
 
+  ProcessWater();
   SetLEDOpenClosed();
 
   if (setupWaitSeconds != 0)
@@ -1421,7 +1440,6 @@ void ShowTime(unsigned long time, unsigned long timeNow, char *buf)
   if (msTime == 0)
   {
     sprintf(buf, "%lu", timeNow);
-
     if (timeNow > time)
     {
       unsigned long ms = timeNow - time;
@@ -2874,7 +2892,7 @@ void setMQTTUpTime()
 void setMQTTTime()
 {
 #if defined MQTTModule
-  char buf[10];
+  char buf[50];
   int second, minute, hour;
 
 #if defined ClockModule
@@ -2922,7 +2940,7 @@ void setMQTTTime()
 
 #include <time.h>
 
-const char timeServer[] = "time.nist.gov"; // time.nist.gov NTP server
+const char *timeServers[] = { "europe.pool.ntp.org", "pool.ntp.org", "time.google.com", "time1.google.com", "time2.google.com", "time3.google.com", "time4.google.com", "time.cloudflare.com", "time.windows.com", "time.nist.gov", "time.navy.mil" };
 
 #if defined WIFI
 
@@ -2932,13 +2950,21 @@ void InitUdp()
 {
 }
 
-struct tm *GetNTP()
+struct tm *GetNTP(const char *address)
 {
   static struct tm time_info;
 
-  configTime(1 * 60 * 60 /* gmt + 1 */, 60 * 60 /* 1 hour difference between summer and winter */, timeServer);
+  printSerial("Getting NTP date/time via ");
+  printSerial(address);
+  printSerial(" ...");
+
+  configTime(1 * 60 * 60 /* gmt + 1 */, 60 * 60 /* 1 hour difference between summer and winter */, address);
   if (getLocalTime(&time_info))
+  {
+    printSerialln(" Success");
     return &time_info;
+  }
+  printSerialln(" Failed");
   return NULL;
 }
 
@@ -2972,7 +2998,7 @@ void InitUdp()
 }
 
 // send an NTP request to the time server at the given address
-void sendNTPpacket(const char * address)
+void sendNTPpacket(const char *address)
 {
   // set all bytes in the buffer to 0
   memset(packetBuffer, 0, NTP_PACKET_SIZE);
@@ -2995,13 +3021,13 @@ void sendNTPpacket(const char * address)
   Udp.endPacket();
 }
 
-struct tm *GetNTP()
+struct tm *GetNTP(const char *address)
 {
   int size;
 
-#if defined OTETHERNET
-    endOTETHERNET();
-#endif
+  printSerial("Getting NTP date/time via ");
+  printSerial(address);
+  printSerial(" ...");
 
   while ((size = Udp.parsePacket()) > 0)
   {
@@ -3012,7 +3038,7 @@ struct tm *GetNTP()
     }
   }
 
-  sendNTPpacket(timeServer); // send an NTP packet to a time server
+  sendNTPpacket(address); // send an NTP packet to a time server
 
   uint32_t beginWait = millis();
   while (millis() - beginWait < 1500)
@@ -3059,13 +3085,13 @@ struct tm *GetNTP()
         time_info = gmtime(&unixTime);
       }
 
+      printSerialln(" Success");
+
       return time_info;
     }
   }
 
-#if defined OTETHERNET
-    setupOTETHERNET();
-#endif
+  printSerialln(" Fail");
 
   return NULL;
 }
@@ -3196,9 +3222,13 @@ void printNTP(struct tm *time_info)
 
 void SyncDateTime()
 {
+#if defined OTETHERNET
+  endOTETHERNET();
+#endif
+
   for (int i = 0; i < 60; i++)
-  {
-    struct tm *time_info = GetNTP();
+  {    
+    struct tm *time_info = GetNTP(timeServers[i % (sizeof(timeServers) / sizeof(*timeServers))]);
     printNTP(time_info);
     if (time_info != NULL)
     {
@@ -3220,6 +3250,10 @@ void SyncDateTime()
 
       ShowTime(msTime, msTime, NULL);
       printSerialln();
+#endif
+
+#if defined OTETHERNET
+      setupOTETHERNET();
 #endif
 
       return;
