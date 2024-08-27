@@ -143,15 +143,15 @@ BluetoothSerial SerialBT;
 #define postfixc '4'
 #undef ClockModule
 #undef SERIAL1
-//#define NO_OTA_PORT
-//#undef NTPModule
 #endif // OTETHERNET
 
+//#undef NTPModule
 //#undef OTETHERNET
+//#undef MQTTModule
 
 #define myName "ChickenGuard" postfix
 
-#define VERSIONSTRING "26/08/2024. Copyright peno"
+#define VERSIONSTRING "Copyright peno " __DATE__
 
 #if defined MQTTModule
 
@@ -584,7 +584,7 @@ void setup(void)
     loopMQTT(true);
     setMQTTDoorStatus("Setup");
     setMQTTWaterStatus("Setup");
-    setMQTTMonitor("Setup");
+    //setMQTTMonitor("Setup");
     setMQTTUpTime();
     setMQTTTemperature();
     loopEthernet();
@@ -668,13 +668,13 @@ void setup(void)
     }
 
     delay(1000);
-  }
-
-  setMQTTMonitor("");
+  }  
 
   logit = false;
 
   printSerialln("Starting");
+
+  setMQTTMonitor("");
 
   ProcessWater();
   SetLEDOpenClosed();
@@ -2710,17 +2710,27 @@ void setupMQTT()
     mqtt.onMessage(onMqttMessage);
     mqtt.onConnected(onMqttConnected);
 
-#   if defined MQTTUSER && defined MQTTPASSWORD
-      mqtt.begin(BROKER_ADDR, MQTTUSER, MQTTPASSWORD);
-#   else
-      mqtt.begin(BROKER_ADDR);
-#   endif
+    beginMQTT();
 
     prevMQTTCheck = 0;
     cntMQTTCheck = 0;
     setupMQTTDone = true;
 
     printSerialln("Done MQTT");
+}
+
+void beginMQTT()
+{
+#   if defined MQTTUSER && defined MQTTPASSWORD
+      mqtt.begin(BROKER_ADDR, MQTTUSER, MQTTPASSWORD);
+#   else
+      mqtt.begin(BROKER_ADDR);
+#   endif
+}
+
+void endMQTT()
+{
+  mqtt.disconnect();
 }
 
 void onMqttMessage(const char* topic, const uint8_t* payload, uint16_t length)
@@ -3223,7 +3233,11 @@ void printNTP(struct tm *time_info)
 void SyncDateTime()
 {
 #if defined OTETHERNET
-  endOTETHERNET();
+  //endOTETHERNET();
+#endif
+
+#if defined MQTTModule
+  endMQTT();
 #endif
 
   for (int i = 0; i < 60; i++)
@@ -3253,7 +3267,10 @@ void SyncDateTime()
 #endif
 
 #if defined OTETHERNET
-      setupOTETHERNET();
+      //setupOTETHERNET();
+#endif
+#if defined MQTTModule
+      beginMQTT();
 #endif
 
       return;
