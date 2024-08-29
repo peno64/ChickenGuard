@@ -95,7 +95,9 @@ or when no password for MQTT
 #define SERIALBT
 #endif // ESP32_DEVKIT_V1 && !defined WOKWI
 
+#if !defined ESP32_DEVKIT_V1
 #define OTETHERNET
+#endif
 
 #if defined SERIALBT
 
@@ -151,7 +153,7 @@ BluetoothSerial SerialBT;
 
 #define myName "ChickenGuard" postfix
 
-#define VERSIONSTRING "Copyright peno " __DATE__
+#define VERSIONSTRING "Copyright peno " __DATE__ " " __TIME__
 
 #if defined MQTTModule
 
@@ -305,6 +307,8 @@ int measureEverySecond;
 bool blinkEmpty;                    // blink for (almost) empty
 
 unsigned long PrevSyncTime;         // previous time a sync was done
+
+bool clearMonitor;                  // clear the monitor in next loop
 
 #define SyncTime 30 * (24 * 60 * 60 * 1000) // sync every x days
 
@@ -584,7 +588,7 @@ void setup(void)
     loopMQTT(true);
     setMQTTDoorStatus("Setup");
     setMQTTWaterStatus("Setup");
-    //setMQTTMonitor("Setup");
+    setMQTTMonitor("Setup");
     setMQTTUpTime();
     setMQTTTemperature();
     loopEthernet();
@@ -672,9 +676,7 @@ void setup(void)
 
   logit = false;
 
-  printSerialln("Starting");
-
-  setMQTTMonitor("");
+  printSerialln("Starting");  
 
   ProcessWater();
   SetLEDOpenClosed();
@@ -688,6 +690,7 @@ void setup(void)
 
   measureEverySecond = measureEverySeconds;
   PrevTime = PrevSyncTime = millis();
+  clearMonitor = true;
 }
 
 void SetStatusLed(bool on)
@@ -1132,12 +1135,18 @@ void loop(void)
   loopEthernet();
   loopMQTT(false);
   loopOTA();
-  loopOTETHERNET();
+  loopOTETHERNET();  
 
   unsigned long CurrentTime = millis();
 
   if (CurrentTime - PrevTime >= 1000) // every second
   {
+    if (clearMonitor)
+    {
+      setMQTTMonitor("");
+      clearMonitor = false;
+    }
+
     PrevTime = CurrentTime;
 
     updateUpTime();
@@ -1591,7 +1600,24 @@ void Command(String answer, bool wait, bool start)
   printSerial("Received: ");
   printSerialln((char *)answer.c_str());
 
-  if (answer.substring(0, 2) == "AT") // current date/time arduino: dd/mm/yy hh:mm:ss
+  if (answer.substring(0, 1) == "V") // Version
+  {
+    char buf[50];
+
+    sprintf(buf, "%s, %s", myName, VERSIONSTRING);
+    printSerialln(buf);
+    setMQTTMonitor(buf);
+
+    if (logit && wait)
+      WaitForInput("Press enter to continue");
+  }
+
+  else if (answer.substring(0, 2) == "CM") // clear monitor
+  {
+    clearMonitor = true;
+  }
+
+  else if (answer.substring(0, 2) == "AT") // current date/time arduino: dd/mm/yy hh:mm:ss
   {
 #if !defined ClockModule
     if (answer[2])
@@ -1900,6 +1926,8 @@ void Command(String answer, bool wait, bool start)
 
   else if (answer.substring(0, 1) == "H") // help
   {
+    printSerialln("V: Version");
+    printSerialln("CM: Clear Monitor");
     printSerialln("O: Open door");
     printSerialln("C: Close door");
     printSerialln("A: Auto door");
@@ -2844,6 +2872,7 @@ void setMQTTTemperature()
   if (setupMQTTDone)
     chickenguardTemperature.setValue((int16_t)readTemperature());
 #endif
+
 #if defined MQTTDebug
   printSerial(">>>MQTT Temperature: ");
   printSerialInt(readTemperature());
@@ -2965,7 +2994,7 @@ struct tm *GetNTP(const char *address)
   static struct tm time_info;
 
   printSerial("Getting NTP date/time via ");
-  printSerial(address);
+  printSerial((char *)address);
   printSerial(" ...");
 
   configTime(1 * 60 * 60 /* gmt + 1 */, 60 * 60 /* 1 hour difference between summer and winter */, address);
