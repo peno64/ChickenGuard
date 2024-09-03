@@ -112,7 +112,7 @@ BluetoothSerial SerialBT;
 #endif // SERIALBT
 
 #define ClockModule                 // If defined then compile with the clock module code
-#if defined ESP32_DEVKIT_V1 || !defined WOKWI
+#if !defined WIFI && !defined WOKWI
 # define EthernetModule              // If defined then connect to ethernet
 #endif
 #if !defined WOKWI
@@ -125,9 +125,9 @@ BluetoothSerial SerialBT;
 #endif
 //#define CONTROLBUILTIN              // If set then set the BUILTIN LED
 
-#if !defined EthernetModule
-# undef MQTTModule                  // MQTT can't work without ethernet
-# undef NTPModule                   // NTP can't work without ethernet
+#if !defined EthernetModule && !defined WIFI
+# undef MQTTModule                  // MQTT can't work without internet
+# undef NTPModule                   // NTP can't work without internet
 #endif
 
 #if defined ESP32
@@ -138,18 +138,19 @@ BluetoothSerial SerialBT;
 # undef postixc
 #endif
 
-#if defined OTETHERNET
+#define TESTING 4
+
+#if TESTING == 4
 #undef postfix
 #define postfix "4"
 #undef postfixc
 #define postfixc '4'
 #undef ClockModule
 #undef SERIAL1
-#endif // OTETHERNET
-
 //#undef NTPModule
 //#undef OTETHERNET
 //#undef MQTTModule
+#endif // TESTING == 4
 
 #define myName "ChickenGuard" postfix
 
@@ -560,7 +561,7 @@ void setup(void)
   digitalWrite(ledEmptyPin, HIGH);
   digitalWrite(ledNotEmptyPin, LOW);
 
-# if defined EthernetModule
+# if defined EthernetModule || defined WIFI
     setupEthernet();
 # endif
 # if defined WOKWI
@@ -1612,6 +1613,102 @@ void Command(String answer, bool wait, bool start)
       WaitForInput("Press enter to continue");
   }
 
+  else if (answer.substring(0, 1) == "D") // Defines
+  {
+    char buf[255] = { 0 };
+
+#if defined ESP32
+    if (*buf)
+      strcat(buf, ", ");
+    strcat(buf, "ESP32");
+#endif
+#if defined ESP32_DEVKIT_V1
+    if (*buf)
+      strcat(buf, ", ");
+    strcat(buf, "ESP32_DEVKIT_V1");
+#endif
+#if defined WOKWI
+    if (*buf)
+      strcat(buf, ", ");
+    strcat(buf, "WOKWI");
+#endif
+#if defined SERIALBT
+    if (*buf)
+      strcat(buf, ", ");
+    strcat(buf, "SERIALBT");
+#endif
+#if defined SERIAL1
+    if (*buf)
+      strcat(buf, ", ");
+    strcat(buf, "SERIAL1");
+#endif
+#if defined resetPin
+    if (*buf)
+      strcat(buf, ", ");
+    strcat(buf, "resetPin");
+#endif
+#if defined CONTROLBUILTIN
+    if (*buf)
+      strcat(buf, ", ");
+    strcat(buf, "CONTROLBUILTIN");
+#endif
+#if defined ClockModule
+    if (*buf)
+      strcat(buf, ", ");
+    strcat(buf, "ClockModule");
+#endif
+#if defined EEPROMModule
+    if (*buf)
+      strcat(buf, ", ");
+    strcat(buf, "EEPROMModule");
+#endif
+#if defined EthernetModule
+    if (*buf)
+      strcat(buf, ", ");
+    strcat(buf, "EthernetModule");
+#endif
+#if defined OTETHERNET
+    if (*buf)
+      strcat(buf, ", ");
+    strcat(buf, "OTETHERNET");
+#endif
+#if defined WIFI
+    if (*buf)
+      strcat(buf, ", ");
+    strcat(buf, "WIFI");
+#endif
+#if defined OTA
+    if (*buf)
+      strcat(buf, ", ");
+    strcat(buf, "OTA");
+#endif
+#if defined NTPModule
+    if (*buf)
+      strcat(buf, ", ");
+    strcat(buf, "NTPModule");
+#endif
+#if defined MQTTModule
+    if (*buf)
+      strcat(buf, ", ");
+    strcat(buf, "MQTTModule");
+#endif
+#if defined MQTTDebug
+    if (*buf)
+      strcat(buf, ", ");
+    strcat(buf, "MQTTDebug");
+#endif
+#if defined TESTING
+    if (*buf)
+      strcat(buf, ", ");
+    sprintf(buf + strlen(buf), "TESTING=%d", TESTING);
+#endif
+    printSerialln(buf);
+    setMQTTMonitor(buf);
+
+    if (logit && wait)
+      WaitForInput("Press enter to continue");
+  }
+
   else if (answer.substring(0, 2) == "CM") // clear monitor
   {
     clearMonitor = true;
@@ -1869,7 +1966,7 @@ void Command(String answer, bool wait, bool start)
 #endif
   }
 
-#if defined EthernetModule
+#if defined EthernetModule || defined WIFI
   else if (answer.substring(0, 2) == "IP")
   {
     printLocalIP();
@@ -1948,7 +2045,7 @@ void Command(String answer, bool wait, bool start)
 #if defined ClockModule
     printSerialln("T: Temperature");
 #endif
-#if defined EthernetModule
+#if defined EthernetModule || defined WIFI
     printSerialln("IP: Print IP address");
     printSerialln("MAC: Print MAC address");
     printSerialln("IS: Show Ethernet status");
@@ -2195,7 +2292,7 @@ float readTemperature()
 }
 #endif // ClockModule
 
-#if defined EthernetModule
+#if defined EthernetModule || defined WIFI
 
 const unsigned long waitReconnectEthernet = 5L * 60L * 1000L; /* 5 minutes */
 const int maxDurationEthernetConnect = 5000; /* 5 seconds */
@@ -2249,7 +2346,7 @@ EthernetClient client;
 
 #endif
 
-#endif // EthernetModule
+#endif // EthernetModule || WIFI
 
 void setupEthernet()
 {
@@ -2356,7 +2453,7 @@ void loopEthernet()
 
 void printLocalIP()
 {
-#if defined EthernetModule
+#if defined EthernetModule || defined WIFI
 # if defined WIFI
   IPAddress ip = WiFi.localIP();
 #else
@@ -2374,7 +2471,7 @@ void printLocalIP()
 void printLocalMAC()
 {
   byte mac[6] = { 0, 0, 0, 0, 0, 0 };
-#if defined EthernetModule
+#if defined EthernetModule || defined WIFI
 # if defined WIFI
   WiFi.macAddress(mac);
 #else
@@ -2391,7 +2488,7 @@ void printLocalMAC()
 
 void printEthernetStatus()
 {
-#if defined EthernetModule
+#if defined EthernetModule || defined WIFI
   if (hasEthernet)
     printSerialln("Ethernet ok");
   else
