@@ -43,9 +43,9 @@
 
   When SERIAL1 is defined, communication can be done via Serial1, enabling connection with a Bluetooth HC-05 module.
 
-  If EEPROMModule is defined, some data is written to EEPROM to prevent data loss upon restart.
+  If EEPROMMODULE is defined, some data is written to EEPROM to prevent data loss upon restart.
 
-  If EthernetModule is defined and the Arduino is connected to Ethernet, two extra modules become available: MQTTModule for sending MQTT messages to/from the Arduino and NTPModule for synchronizing date/time with internet time.
+  If ETHERNETMODULE is defined and the Arduino is connected to Ethernet, two extra modules become available: MQTTMODULE for sending MQTT messages to/from the Arduino and NTPMODULE for synchronizing date/time with internet time.
 
   When MQTT is enabled, the system can be monitored via Home Assistant, adding a convenient touch to this chicken guard.
 
@@ -95,7 +95,7 @@ or when no password for MQTT
 #define SERIALBT
 #endif // ESP32_DEVKIT_V1 && !defined WOKWI
 
-#if !defined ESP32_DEVKIT_V1
+#if !defined ESP32_DEVKIT_V1 && !defined WOKWI
 #define OTETHERNET
 #endif
 
@@ -111,23 +111,23 @@ BluetoothSerial SerialBT;
 
 #endif // SERIALBT
 
-#define ClockModule                 // If defined then compile with the clock module code
+#define CLOCKMODULE                 // If defined then compile with the clock module code
 #if !defined WIFI && !defined WOKWI
-# define EthernetModule              // If defined then connect to ethernet
+# define ETHERNETMODULE              // If defined then connect to ethernet
 #endif
 #if !defined WOKWI
-# define MQTTModule                  // If defined then compile with MQTT support - can be used via Home Assistant
+# define MQTTMODULE                  // If defined then compile with MQTT support - can be used via Home Assistant
 #endif
-#define NTPModule                   // If defined then get internet time
-#define EEPROMModule                // If defined then store data in EEPROM
+#define NTPMODULE                   // If defined then get internet time
+#define EEPROMMODULE                // If defined then store data in EEPROM
 #if !defined ESP32_DEVKIT_V1
 # define SERIAL1                    // If defined then also communicate via Serial1 (Bluetooth in my case)
 #endif
 //#define CONTROLBUILTIN              // If set then set the BUILTIN LED
 
-#if !defined EthernetModule && !defined WIFI
-# undef MQTTModule                  // MQTT can't work without internet
-# undef NTPModule                   // NTP can't work without internet
+#if !defined ETHERNETMODULE && !defined WIFI
+# undef MQTTMODULE                  // MQTT can't work without internet
+# undef NTPMODULE                   // NTP can't work without internet
 #endif
 
 #if defined ESP32
@@ -138,25 +138,27 @@ BluetoothSerial SerialBT;
 # undef postixc
 #endif
 
-#define TESTING 4
+#if !defined WOKWI && !defined ESP32
+//#define TESTING 4
+#endif
 
 #if TESTING == 4
 #undef postfix
 #define postfix "4"
 #undef postfixc
 #define postfixc '4'
-#undef ClockModule
+#undef CLOCKMODULE
 #undef SERIAL1
-//#undef NTPModule
+//#undef NTPMODULE
 //#undef OTETHERNET
-//#undef MQTTModule
+//#undef MQTTMODULE
 #endif // TESTING == 4
 
 #define myName "ChickenGuard" postfix
 
 #define VERSIONSTRING "Copyright peno " __DATE__ " " __TIME__
 
-#if defined MQTTModule
+#if defined MQTTMODULE
 
 #define MQTTid "ChickenGuard" postfix
 #define MQTTprefix "Chickenguard" postfix
@@ -176,7 +178,7 @@ logbook:
 
 */
 
-#endif // MQTTModule
+#endif // MQTTMODULE
 
 #if defined ESP32_DEVKIT_V1
 # define MOTORCLOSEPIN 25
@@ -263,9 +265,9 @@ uint16_t ldrMaximum = 0;            // maximum ldr value
 const byte startHourOpen = 7;       // minimum hour that door may open
 const byte startMinuteOpen = 0;     // minimum minute that door may open
 
-bool hasClockModule = false;        // Is the clock module detected
+bool hasCLOCKMODULE = false;        // Is the clock module detected
 
-#if defined ClockModule
+#if defined CLOCKMODULE
 int hourOpened = 0;                 // hour of last door open
 int minuteOpened = 0;               // minute of last door open
 int secondOpened = 0;               // second of last door open
@@ -273,7 +275,7 @@ int secondOpened = 0;               // second of last door open
 int hourClosed = 0;                 // hour of last door close
 int minuteClosed = 0;               // hour of last door close
 int secondClosed = 0;               // hour of last door close
-#else // !ClockModule
+#else // !CLOCKMODULE
 unsigned long msTime = 0;           // millis() value of set time
 int dayTime = 0;                    // set day at msTime
 int monthTime = 0;                  // set month at msTime
@@ -284,7 +286,7 @@ int secondsTime = 0;                // set seconds at msTime
 
 unsigned long msOpened = 0;         // millis() value of last door open
 unsigned long msClosed = 0;         // millis() value of last door close
-#endif // ClockModule
+#endif // CLOCKMODULE
 
 unsigned long timePrevReset = 0;    // time when a previous open now or close now was done
 bool openPrevReset;
@@ -328,7 +330,7 @@ struct
   { "closeWaitTime1", &closeWaitTime1, 10000 },
   { "closeWaitTime2", &closeWaitTime2, 4000 },
   { "closeWaitTime3", &closeWaitTime3, 40 },
-#if defined ClockModule
+#if defined CLOCKMODULE
   { "hourOpened", &hourOpened, 0 },
   { "minuteOpened", &minuteOpened, 0 },
   { "secondOpened", &secondOpened, 0 },
@@ -341,28 +343,28 @@ struct
 
 void (*resetFunc) (void) = 0;       //declare reset function at address 0
 
-#if defined resetPin
+#if defined RESETPIN
 
 void SetupReset()
 {
-  digitalWrite(resetPin, HIGH); // Set digital pin to HIGH
+  digitalWrite(RESETPIN, HIGH); // Set digital pin to HIGH
   delay(200);
-  pinMode(resetPin, OUTPUT); // Make sure it gets the HIGH
+  pinMode(RESETPIN, OUTPUT); // Make sure it gets the HIGH
   delay(200);
-  pinMode(resetPin, INPUT_PULLUP); // Change this to a pullup resistor such that arduino can still reset itself (for example upload sketch)
+  pinMode(RESETPIN, INPUT_PULLUP); // Change this to a pullup resistor such that arduino can still reset itself (for example upload sketch)
 }
 
 void DoReset()
 {
-  pinMode(resetPin, OUTPUT);    // Change to an output
-  digitalWrite(resetPin, LOW);  // Reset
+  pinMode(RESETPIN, OUTPUT);    // Change to an output
+  digitalWrite(RESETPIN, LOW);  // Reset
   // Should not get here but if it does undo reset
   delay(500);
   SetupReset();
   resetFunc(); // try a soft reset
 }
 
-#else // !resetPin
+#else // !RESETPIN
 
 #define SetupReset()
 
@@ -372,7 +374,7 @@ void DoReset()
 #define DoReset() resetFunc()
 #endif
 
-#endif // resetPin
+#endif // RESETPIN
 
 void printSerial(char *data)
 {
@@ -470,7 +472,7 @@ void setChangeableData()
   for (int i = 0; i < sizeof(changeableData) / sizeof(*changeableData); i++)
     *(changeableData[i].variable) = changeableData[i].initialValue;
 
-# if defined EEPROMModule
+# if defined EEPROMMODULE
     readChangeableData();
 # endif
 
@@ -521,9 +523,9 @@ void setup(void)
 
   setChangeableData();
 
-#if defined ClockModule
-  hasClockModule = InitClock();
-  if (hasClockModule)
+#if defined CLOCKMODULE
+  hasCLOCKMODULE = InitClock();
+  if (hasCLOCKMODULE)
     printSerialln("Clock module found");
   else
     printSerialln("Clock module not found");
@@ -561,7 +563,7 @@ void setup(void)
   digitalWrite(ledEmptyPin, HIGH);
   digitalWrite(ledNotEmptyPin, LOW);
 
-# if defined EthernetModule || defined WIFI
+# if defined ETHERNETMODULE || defined WIFI
     setupEthernet();
 # endif
 # if defined WOKWI
@@ -580,7 +582,7 @@ void setup(void)
     setupOTA();
 # endif
 
-# if defined MQTTModule
+# if defined MQTTMODULE
     printSerialln("MQTT enabled");
 
     setupMQTT();
@@ -598,11 +600,11 @@ void setup(void)
     printSerialln("MQTT not enabled");
 # endif
 
-#if defined NTPModule
+#if defined NTPMODULE
   printSerialln("NTP module enabled");
   InitUdp();
 
-# if !defined ClockModule
+# if !defined CLOCKMODULE
     SyncDateTime();
 # endif
 #else
@@ -728,11 +730,11 @@ void MotorOpen(bool log)
 
   if (log)
   {
-#if defined ClockModule
-  if (hasClockModule)
+#if defined CLOCKMODULE
+  if (hasCLOCKMODULE)
   {
     readDS3231time(&secondOpened, &minuteOpened, &hourOpened, NULL, NULL, NULL, NULL);
-#   if defined EEPROMModule
+#   if defined EEPROMMODULE
       writeChangeableData();
 #   endif
   }
@@ -753,11 +755,11 @@ void MotorClose(bool log)
 
   if (log)
   {
-#if defined ClockModule
-  if (hasClockModule)
+#if defined CLOCKMODULE
+  if (hasCLOCKMODULE)
   {
     readDS3231time(&secondClosed, &minuteClosed, &hourClosed, NULL, NULL, NULL, NULL);
-#   if defined EEPROMModule
+#   if defined EEPROMMODULE
       writeChangeableData();
 #   endif
   }
@@ -1025,14 +1027,14 @@ int ProcessDoor(bool mayOpen, bool log)
 
   bool isClosed = IsClosed();
 
-#if defined ClockModule
+#if defined CLOCKMODULE
   static int hourOpened2 = 0;                // hour of last door open
   static int minuteOpened2 = 0;              // minute of last door open
   static int secondOpened2 = 0;              // second of last door open
 
   if (isClosed)
     hourOpened2 = minuteOpened2 = secondOpened2 = 0;
-  else if (hasClockModule && hourOpened2 == 0 && minuteOpened2 == 0 && secondOpened2 == 0)
+  else if (hasCLOCKMODULE && hourOpened2 == 0 && minuteOpened2 == 0 && secondOpened2 == 0)
     readDS3231time(&secondOpened2, &minuteOpened2, &hourOpened2, NULL, NULL, NULL, NULL);
 #endif
 
@@ -1044,7 +1046,7 @@ int ProcessDoor(bool mayOpen, bool log)
 
     sprintf(data, "Something is not ok (%d - %s); idle", status, ptr);
     printSerialln(data);
-#if defined ClockModule
+#if defined CLOCKMODULE
     printSerial(" Time open: ");
     ShowTime(&hourOpened, &minuteOpened, &secondOpened);
     printSerialln();
@@ -1201,7 +1203,7 @@ void loop(void)
     }
   }
 
-#if defined NTPModule
+#if defined NTPMODULE
   if (CurrentTime - PrevSyncTime >= SyncTime)
   {
     PrevSyncTime = CurrentTime;
@@ -1278,9 +1280,9 @@ void info(int measureEverySecond, bool withDayOfWeek, char *buf)
   LightCalculation(average, minimum, maximum, true);
   sprintf(buf + strlen(buf), ", ~~: %d, Door is %s (%s), Open LDR: %d, Close LDR: %d, Status: %d", average, IsClosed() ? "closed" : "open", isClosedByMotor ? "closed" : "open", ldrMorning, ldrEvening, status);
 
-  if (hasClockModule)
+  if (hasCLOCKMODULE)
   {
-#if defined ClockModule
+#if defined CLOCKMODULE
     int second, minute, hour;
     byte dayOfWeek;
     // retrieve data from DS3231
@@ -1295,7 +1297,7 @@ void info(int measureEverySecond, bool withDayOfWeek, char *buf)
     ShowTime(&hourClosed, &minuteClosed, &secondClosed, buf + strlen(buf));
 #endif
   }
-#if !defined ClockModule
+#if !defined CLOCKMODULE
   else
   {
     unsigned long timeNow = millis();
@@ -1325,7 +1327,7 @@ void info(int measureEverySecond, bool dolog)
   }
 }
 
-#if defined ClockModule
+#if defined CLOCKMODULE
 void ShowTime(int *hour, int *minute, int *second, byte *dayOfWeek, char *buf)
 {
   char *buffer[15];
@@ -1352,20 +1354,20 @@ void ShowTime(int *hour, int *minute, int *second)
 {
   ShowTime(hour, minute, second, NULL);
 }
-#endif // ClockModule
+#endif // CLOCKMODULE
 
 void GetTime(int &hour, int &minute, int &second)
 {
   minute = 0;
   hour = 24;
-  if (hasClockModule)
+  if (hasCLOCKMODULE)
   {
-#if defined ClockModule
+#if defined CLOCKMODULE
     // retrieve data from DS3231
     readDS3231time(&second, &minute, &hour, NULL, NULL, NULL, NULL);
 #endif
   }
-#if !defined ClockModule
+#if !defined CLOCKMODULE
   else if (msTime != 0)
   {
     unsigned long timeNow = millis();
@@ -1375,7 +1377,7 @@ void GetTime(int &hour, int &minute, int &second)
 #endif
 }
 
-#if !defined ClockModule
+#if !defined CLOCKMODULE
 void GetTime(unsigned long time, unsigned long timeNow, int &hour, int &minute, int &second)
 {
   byte year, month, day;
@@ -1491,7 +1493,7 @@ void ShowTime(unsigned long time, unsigned long timeNow)
   ShowTime(time, timeNow, NULL);
 }
 
-#endif // !ClockModule
+#endif // !CLOCKMODULE
 
 String WaitForInput(char *question)
 {
@@ -1571,7 +1573,7 @@ void setChangeableValue(char *name, char *svalue)
       value = atoi(svalue);
       *(changeableData[i].variable) = value;
 
-#if defined EEPROMModule
+#if defined EEPROMMODULE
         writeChangeableData();
 #endif
       found = true;
@@ -1642,30 +1644,30 @@ void Command(String answer, bool wait, bool start)
       strcat(buf, ", ");
     strcat(buf, "SERIAL1");
 #endif
-#if defined resetPin
+#if defined RESETPIN
     if (*buf)
       strcat(buf, ", ");
-    strcat(buf, "resetPin");
+    strcat(buf, "RESETPIN");
 #endif
 #if defined CONTROLBUILTIN
     if (*buf)
       strcat(buf, ", ");
     strcat(buf, "CONTROLBUILTIN");
 #endif
-#if defined ClockModule
+#if defined CLOCKMODULE
     if (*buf)
       strcat(buf, ", ");
-    strcat(buf, "ClockModule");
+    strcat(buf, "CLOCKMODULE");
 #endif
-#if defined EEPROMModule
+#if defined EEPROMMODULE
     if (*buf)
       strcat(buf, ", ");
-    strcat(buf, "EEPROMModule");
+    strcat(buf, "EEPROMMODULE");
 #endif
-#if defined EthernetModule
+#if defined ETHERNETMODULE
     if (*buf)
       strcat(buf, ", ");
-    strcat(buf, "EthernetModule");
+    strcat(buf, "ETHERNETMODULE");
 #endif
 #if defined OTETHERNET
     if (*buf)
@@ -1682,20 +1684,20 @@ void Command(String answer, bool wait, bool start)
       strcat(buf, ", ");
     strcat(buf, "OTA");
 #endif
-#if defined NTPModule
+#if defined NTPMODULE
     if (*buf)
       strcat(buf, ", ");
-    strcat(buf, "NTPModule");
+    strcat(buf, "NTPMODULE");
 #endif
-#if defined MQTTModule
+#if defined MQTTMODULE
     if (*buf)
       strcat(buf, ", ");
-    strcat(buf, "MQTTModule");
+    strcat(buf, "MQTTMODULE");
 #endif
-#if defined MQTTDebug
+#if defined MQTTDEBUG
     if (*buf)
       strcat(buf, ", ");
-    strcat(buf, "MQTTDebug");
+    strcat(buf, "MQTTDEBUG");
 #endif
 #if defined TESTING
     if (*buf)
@@ -1716,7 +1718,7 @@ void Command(String answer, bool wait, bool start)
 
   else if (answer.substring(0, 2) == "AT") // current date/time arduino: dd/mm/yy hh:mm:ss
   {
-#if !defined ClockModule
+#if !defined CLOCKMODULE
     if (answer[2])
     {
       int day = answer.substring(2, 4).toInt();
@@ -1752,12 +1754,12 @@ void Command(String answer, bool wait, bool start)
 
     if (logit && wait)
       WaitForInput("Press enter to continue");
-#endif // !ClockModule
+#endif // !CLOCKMODULE
   }
 
-  else if (answer.substring(0, 2) == "CT" && hasClockModule) // current date/time clock module: dd/mm/yy hh:mm:ss
+  else if (answer.substring(0, 2) == "CT" && hasCLOCKMODULE) // current date/time clock module: dd/mm/yy hh:mm:ss
   {
-#if defined ClockModule
+#if defined CLOCKMODULE
     if (answer[2])
     {
       int day = answer.substring(2, 4).toInt();
@@ -1775,7 +1777,7 @@ void Command(String answer, bool wait, bool start)
 
     if (logit && wait)
       WaitForInput("Press enter to continue");
-#endif // ClockModule
+#endif // CLOCKMODULE
   }
 
   else if (answer.substring(0, 1) == "O") // open
@@ -1845,7 +1847,7 @@ void Command(String answer, bool wait, bool start)
       WaitForInput("Press enter to continue");
   }
 
-#if defined NTPModule
+#if defined NTPMODULE
   else if (answer.substring(0, 4) == "SYNC")
   {
     SyncDateTime();
@@ -1952,7 +1954,7 @@ void Command(String answer, bool wait, bool start)
 
   else if (answer.substring(0, 1) == "T") // temperature
   {
-#if defined ClockModule
+#if defined CLOCKMODULE
     char buf[50];
 
     strcpy(buf, "Temperature: ");
@@ -1966,7 +1968,7 @@ void Command(String answer, bool wait, bool start)
 #endif
   }
 
-#if defined EthernetModule || defined WIFI
+#if defined ETHERNETMODULE || defined WIFI
   else if (answer.substring(0, 2) == "IP")
   {
     printLocalIP();
@@ -2033,19 +2035,19 @@ void Command(String answer, bool wait, bool start)
     printSerialln("I: Info");
     printSerialln("L: Log toggle");
     printSerialln("SL: Switch LEDs");
-#if !defined ClockModule
+#if !defined CLOCKMODULE
     printSerialln("AT<dd/mm/yy hh:mm:ss>: set arduino timer date/time");
 #endif
-#if defined ClockModule
-    printSerialln("CT<dd/mm/yy hh:mm:ss>: Set clockmodule date/time");
+#if defined CLOCKMODULE
+    printSerialln("CT<dd/mm/yy hh:mm:ss>: Set CLOCKMODULE date/time");
 #endif
-#if defined NTPModule
+#if defined NTPMODULE
     printSerialln("SYNC: Synchronize date/time with NTP server");
 #endif
-#if defined ClockModule
+#if defined CLOCKMODULE
     printSerialln("T: Temperature");
 #endif
-#if defined EthernetModule || defined WIFI
+#if defined ETHERNETMODULE || defined WIFI
     printSerialln("IP: Print IP address");
     printSerialln("MAC: Print MAC address");
     printSerialln("IS: Show Ethernet status");
@@ -2085,13 +2087,13 @@ void DSTCorrection()
   int second, minute, hour;
   byte dayOfWeek, dayOfMonth, month, year;
 
-#if defined ClockModule
-  if (hasClockModule)
+#if defined CLOCKMODULE
+  if (hasCLOCKMODULE)
     readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
   else
 #endif
   {
-#if !defined ClockModule
+#if !defined CLOCKMODULE
     unsigned long timeNow = millis();
 
     GetTime(timeNow, timeNow, year, month, dayOfMonth, hour, minute, second);
@@ -2133,8 +2135,8 @@ void DSTCorrection()
       int day = ((int)dayOfMonth) - (dstDayWeek - 1) * weekDays;
       if (day >= firstDay && day <= lastDay)
       {
-#if defined ClockModule
-        if (hasClockModule)
+#if defined CLOCKMODULE
+        if (hasCLOCKMODULE)
         {
           readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
           minute += adjustMinutes % 60;
@@ -2154,7 +2156,7 @@ void DSTCorrection()
         else
 #endif
         {
-#if !defined ClockModule
+#if !defined CLOCKMODULE
           minuteTime += adjustMinutes % 60;
           while (minuteTime >= 60)
           {
@@ -2170,7 +2172,7 @@ void DSTCorrection()
   }
 }
 
-#if defined ClockModule
+#if defined CLOCKMODULE
 
 #include <Wire.h>
 
@@ -2275,7 +2277,7 @@ float readTemperature()
 {
   float temperature;
 
-  if (hasClockModule)
+  if (hasCLOCKMODULE)
   {
     Wire.beginTransmission(DS3231_I2C_ADDRESS);
     Wire.write(0x11); // register address for the temperature
@@ -2290,9 +2292,9 @@ float readTemperature()
     temperature = 0.0;
   return temperature;
 }
-#endif // ClockModule
+#endif // CLOCKMODULE
 
-#if defined EthernetModule || defined WIFI
+#if defined ETHERNETMODULE || defined WIFI
 
 const unsigned long waitReconnectEthernet = 5L * 60L * 1000L; /* 5 minutes */
 const int maxDurationEthernetConnect = 5000; /* 5 seconds */
@@ -2346,7 +2348,7 @@ EthernetClient client;
 
 #endif
 
-#endif // EthernetModule || WIFI
+#endif // ETHERNETMODULE || WIFI
 
 void setupEthernet()
 {
@@ -2391,7 +2393,7 @@ void setupEthernet()
   sprintf(buf, "RRSI: %d", (int)WiFi.RSSI());
   printSerialln(buf);
 
-#elif defined EthernetModule
+#elif defined ETHERNETMODULE
   int ret;
 
   printSerialln("Start Ethernet");
@@ -2422,7 +2424,7 @@ void loopEthernet()
 {
 #if defined WIFI
 
-#elif defined EthernetModule
+#elif defined ETHERNETMODULE
 
   unsigned long CurrentTime1 = millis();
   if (prevEthernetCheck == 0 /* If previous connection was ok */ ||
@@ -2453,7 +2455,7 @@ void loopEthernet()
 
 void printLocalIP()
 {
-#if defined EthernetModule || defined WIFI
+#if defined ETHERNETMODULE || defined WIFI
 # if defined WIFI
   IPAddress ip = WiFi.localIP();
 #else
@@ -2471,7 +2473,7 @@ void printLocalIP()
 void printLocalMAC()
 {
   byte mac[6] = { 0, 0, 0, 0, 0, 0 };
-#if defined EthernetModule || defined WIFI
+#if defined ETHERNETMODULE || defined WIFI
 # if defined WIFI
   WiFi.macAddress(mac);
 #else
@@ -2488,7 +2490,7 @@ void printLocalMAC()
 
 void printEthernetStatus()
 {
-#if defined EthernetModule || defined WIFI
+#if defined ETHERNETMODULE || defined WIFI
   if (hasEthernet)
     printSerialln("Ethernet ok");
   else
@@ -2758,7 +2760,7 @@ void loopOTETHERNET()
 #endif
 }
 
-#if defined MQTTModule
+#if defined MQTTMODULE
 
 // See https://github.com/dawidchyrzynski/arduino-home-assistant/
 // See https://dawidchyrzynski.github.io/arduino-home-assistant/documents/getting-started/index.html
@@ -2879,11 +2881,11 @@ void onMqttConnected()
     mqtt.subscribe(MQTTid "/#");
 }
 
-#endif // MQTTModule
+#endif // MQTTMODULE
 
 void loopMQTT(bool force)
 {
-#if defined MQTTModule
+#if defined MQTTMODULE
 
   if (hasEthernet)
   {
@@ -2919,16 +2921,16 @@ void loopMQTT(bool force)
     }
   }
 
-#endif // MQTTModule
+#endif // MQTTMODULE
 }
 
 void setMQTTDoorStatus(char *msg)
 {
-#if defined MQTTModule
+#if defined MQTTMODULE
   if (setupMQTTDone)
     chickenguardDoorStatus.setValue(msg);
 #endif
-#if defined MQTTDebug
+#if defined MQTTDEBUG
   printSerial(">>>MQTT DoorStatus: ");
   printSerialln(msg);
   printSerialln("<<<");
@@ -2937,11 +2939,11 @@ void setMQTTDoorStatus(char *msg)
 
 void setMQTTLDR(int ldr)
 {
-#if defined MQTTModule
+#if defined MQTTMODULE
   if (setupMQTTDone)
     chickenguardLDR.setValue((int16_t)ldr);
 #endif
-#if defined MQTTDebug
+#if defined MQTTDEBUG
   printSerial(">>>MQTT LDR: ");
   printSerialInt(ldr);
   printSerialln();
@@ -2951,11 +2953,11 @@ void setMQTTLDR(int ldr)
 
 void setMQTTLDRavg(int average)
 {
-#if defined MQTTModule
+#if defined MQTTMODULE
   if (setupMQTTDone)
     chickenguardLDRavg.setValue((int16_t)average);
 #endif
-#if defined MQTTDebug
+#if defined MQTTDEBUG
   printSerial(">>>MQTT LDRAvg: ");
   printSerialInt(average);
   printSerialln();
@@ -2965,12 +2967,12 @@ void setMQTTLDRavg(int average)
 
 void setMQTTTemperature()
 {
-#if defined MQTTModule && defined ClockModule
+#if defined MQTTMODULE && defined CLOCKMODULE
   if (setupMQTTDone)
     chickenguardTemperature.setValue((int16_t)readTemperature());
 #endif
 
-#if defined MQTTDebug
+#if defined MQTTDEBUG
   printSerial(">>>MQTT Temperature: ");
   printSerialInt(readTemperature());
   printSerialln();
@@ -2980,13 +2982,13 @@ void setMQTTTemperature()
 
 void setMQTTMonitor(char *msg)
 {
-#if defined MQTTModule
+#if defined MQTTMODULE
   if (strlen(msg) > 255) // it looks like that a message may not be longer than 255 characters (in home assistant)
     msg[255] = 0;
   if (setupMQTTDone)
     chickenguardMonitor.setValue(msg);
 #endif
-#if defined MQTTDebug
+#if defined MQTTDEBUG
   printSerial(">>>MQTT Monitor: ");
   printSerialln(msg);
   printSerialln("<<<");
@@ -2995,11 +2997,11 @@ void setMQTTMonitor(char *msg)
 
 void setMQTTWaterStatus(char *msg)
 {
-#if defined MQTTModule
+#if defined MQTTMODULE
   if (setupMQTTDone)
     chickenguardWaterStatus.setValue(msg);
 #endif
-#if defined MQTTDebug
+#if defined MQTTDEBUG
   printSerial(">>>MQTT WaterStatus: ");
   printSerialln(msg);
   printSerialln("<<<");
@@ -3008,16 +3010,16 @@ void setMQTTWaterStatus(char *msg)
 
 void setMQTTUpTime()
 {
-#if defined MQTTModule || defined MQTTDebug
+#if defined MQTTMODULE || defined MQTTDEBUG
   char buf[50];
 
   sprintf(buf, "%u:%02d:%02d:%02d", uptimeDays, (int)uptimeHours, (int)uptimeMinutes, (int)uptimeSeconds);
 #endif
-#if defined MQTTModule
+#if defined MQTTMODULE
   if (setupMQTTDone)
     chickenguardUpTime.setValue(buf);
 #endif
-#if defined MQTTDebug
+#if defined MQTTDEBUG
   printSerial(">>>MQTT UpTime: ");
   printSerialln(buf);
   printSerialln("<<<");
@@ -3027,13 +3029,13 @@ void setMQTTUpTime()
 
 void setMQTTTime()
 {
-#if defined MQTTModule
+#if defined MQTTMODULE
   char buf[50];
   int second, minute, hour;
 
-#if defined ClockModule
+#if defined CLOCKMODULE
   // retrieve data from DS3231
-  if (hasClockModule)
+  if (hasCLOCKMODULE)
     readDS3231time(&second, &minute, &hour, NULL, NULL, NULL, NULL);
   else
     second = minute = hour = -1;
@@ -3048,7 +3050,7 @@ void setMQTTTime()
 #endif
   chickenguardTimeNow.setValue(buf);
 
-#if defined ClockModule
+#if defined CLOCKMODULE
   if (hourOpened != 0 || minuteOpened != 0 || secondOpened != 0)
     ShowTime(&hourOpened, &minuteOpened, &secondOpened, buf);
   else
@@ -3059,7 +3061,7 @@ void setMQTTTime()
   if (setupMQTTDone)
     chickenguardTimeOpened.setValue(buf);
 
-#if defined ClockModule
+#if defined CLOCKMODULE
   if (hourClosed != 0 || minuteClosed != 0 || secondClosed != 0)
     ShowTime(&hourClosed, &minuteClosed, &secondClosed, buf);
   else
@@ -3072,7 +3074,7 @@ void setMQTTTime()
 #endif
 }
 
-#if defined NTPModule
+#if defined NTPMODULE
 
 #include <time.h>
 
@@ -3362,7 +3364,7 @@ void SyncDateTime()
   //endOTETHERNET();
 #endif
 
-#if defined MQTTModule
+#if defined MQTTMODULE
   endMQTT();
 #endif
 
@@ -3372,8 +3374,8 @@ void SyncDateTime()
     printNTP(time_info);
     if (time_info != NULL)
     {
-#if defined ClockModule
-      if (hasClockModule)
+#if defined CLOCKMODULE
+      if (hasCLOCKMODULE)
       {
         setDS3231time(time_info->tm_sec, time_info->tm_min, time_info->tm_hour, 0, time_info->tm_mday, 1 + time_info->tm_mon, 1900 + time_info->tm_year - 2000);
         printDS3231time();
@@ -3395,7 +3397,7 @@ void SyncDateTime()
 #if defined OTETHERNET
       //setupOTETHERNET();
 #endif
-#if defined MQTTModule
+#if defined MQTTMODULE
       beginMQTT();
 #endif
 
@@ -3406,9 +3408,9 @@ void SyncDateTime()
   DoReset();
 }
 
-#endif // NTPModule
+#endif // NTPMODULE
 
-#if defined EEPROMModule
+#if defined EEPROMMODULE
 
 #include <EEPROM.h>
 
@@ -3459,4 +3461,4 @@ void writeChangeableData()
 #endif
 }
 
-#endif // EEPROMModule
+#endif // EEPROMMODULE
