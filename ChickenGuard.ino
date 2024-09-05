@@ -139,7 +139,7 @@ BluetoothSerial SerialBT;
 #endif
 
 #if !defined WOKWI && !defined ESP32
-//#define TESTING 4
+#define TESTING 4
 #endif
 
 #if TESTING == 4
