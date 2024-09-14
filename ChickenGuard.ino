@@ -681,8 +681,15 @@ void setup(void)
 
   printSerialln("Starting");  
 
+  loopEthernet();
+  loopMQTT(false);
+
+  setMQTTMonitor("");
   ProcessWater();
   SetLEDOpenClosed();
+
+  loopEthernet();
+  loopMQTT(false);
 
   if (setupWaitSeconds != 0)
     Close(false); // Via the magnet switch we know for sure that the door is closed hereafter
@@ -693,7 +700,7 @@ void setup(void)
 
   measureEverySecond = measureEverySeconds;
   PrevTime = PrevSyncTime = millis();
-  clearMonitor = true;
+  clearMonitor = false;
 }
 
 void SetStatusLed(bool on)
@@ -1478,7 +1485,7 @@ void ShowTime(unsigned long time, unsigned long timeNow, char *buf)
 
       GetTime(time, timeNow, hour, minute, second);
 
-      sprintf(buf + strlen(buf), "%02d:%02d:%02d", (int)hour, (int)minute, (int)second);
+      sprintf(buf + strlen(buf), "%d:%02d:%02d", (int)hour, (int)minute, (int)second);
     }
     else
       strcat(buf, "-");
@@ -2928,7 +2935,14 @@ void setMQTTDoorStatus(char *msg)
 {
 #if defined MQTTMODULE
   if (setupMQTTDone)
-    chickenguardDoorStatus.setValue(msg);
+  {
+    static char prevDoorStatus[50] = { 0 };
+    if (strncmp(prevDoorStatus, msg, sizeof(prevDoorStatus)))
+    {
+      strncpy(prevDoorStatus, msg, sizeof(prevDoorStatus));
+      chickenguardDoorStatus.setValue(msg);
+    }
+  }
 #endif
 #if defined MQTTDEBUG
   printSerial(">>>MQTT DoorStatus: ");
@@ -2941,7 +2955,14 @@ void setMQTTLDR(int ldr)
 {
 #if defined MQTTMODULE
   if (setupMQTTDone)
-    chickenguardLDR.setValue((int16_t)ldr);
+  {
+    static int prevldr = -1;
+    if (ldr != prevldr)
+    {
+      prevldr = ldr;
+      chickenguardLDR.setValue((int16_t)ldr);
+    }
+  }
 #endif
 #if defined MQTTDEBUG
   printSerial(">>>MQTT LDR: ");
@@ -2955,7 +2976,14 @@ void setMQTTLDRavg(int average)
 {
 #if defined MQTTMODULE
   if (setupMQTTDone)
-    chickenguardLDRavg.setValue((int16_t)average);
+  {
+    static int prevAverage = -1;
+    if (average != prevAverage)
+    {
+      prevAverage = average;
+      chickenguardLDRavg.setValue((int16_t)average);
+    }
+  }
 #endif
 #if defined MQTTDEBUG
   printSerial(">>>MQTT LDRAvg: ");
@@ -2969,7 +2997,15 @@ void setMQTTTemperature()
 {
 #if defined MQTTMODULE && defined CLOCKMODULE
   if (setupMQTTDone)
-    chickenguardTemperature.setValue((int16_t)readTemperature());
+  {
+    static int prevTemperature = -274;
+    int temperature = readTemperature();
+    if (temperature != prevTemperature)
+    {
+      prevTemperature = temperature;
+      chickenguardTemperature.setValue((int16_t)temperature);
+    }
+  }
 #endif
 
 #if defined MQTTDEBUG
@@ -2999,7 +3035,15 @@ void setMQTTWaterStatus(char *msg)
 {
 #if defined MQTTMODULE
   if (setupMQTTDone)
-    chickenguardWaterStatus.setValue(msg);
+  {
+    static char prevWaterStatus[10] = { 0 };
+    if (strncmp(prevWaterStatus, msg, sizeof(prevWaterStatus)))
+    {
+      strncpy(prevWaterStatus, msg, sizeof(prevWaterStatus));
+      chickenguardWaterStatus.setValue(msg);
+    }    
+  }
+    
 #endif
 #if defined MQTTDEBUG
   printSerial(">>>MQTT WaterStatus: ");
@@ -3059,7 +3103,14 @@ void setMQTTTime()
   ShowTime(msOpened, timeNow, buf);
 #endif
   if (setupMQTTDone)
-    chickenguardTimeOpened.setValue(buf);
+  {
+    static char prevTimeOpened[10] = { 0 };
+    if (strncmp(prevTimeOpened, buf, sizeof(prevTimeOpened)))
+    {
+      strncpy(prevTimeOpened, buf, sizeof(prevTimeOpened));
+      chickenguardTimeOpened.setValue(buf);
+    }
+  }
 
 #if defined CLOCKMODULE
   if (hourClosed != 0 || minuteClosed != 0 || secondClosed != 0)
@@ -3070,7 +3121,14 @@ void setMQTTTime()
   ShowTime(msClosed, timeNow, buf);
 #endif
   if (setupMQTTDone)
-    chickenguardTimeClosed.setValue(buf);
+  {
+    static char prevTimeClosed[10] = { 0 };
+    if (strncmp(prevTimeClosed, buf, sizeof(prevTimeClosed)))
+    {
+      strncpy(prevTimeClosed, buf, sizeof(prevTimeClosed));
+      chickenguardTimeClosed.setValue(buf);
+    }
+  }
 #endif
 }
 
