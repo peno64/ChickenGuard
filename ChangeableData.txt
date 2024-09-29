@@ -9,8 +9,8 @@ closeWaitTime3 = 30
 
 Cord:
 
-motorPWM = 190
-openMilliseconds = 1250
+motorPWM = 255
+openMilliseconds = 1400
 closeMilliseconds = 4000
 closeWaitTime1 = 10000
 closeWaitTime2 = 4000

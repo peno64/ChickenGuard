@@ -2781,7 +2781,8 @@ bool setupMQTTDone = false;
 unsigned long prevMQTTCheck = 0;
 int cntMQTTCheck = 0;
 
-#define BROKER_ADDR IPAddress(192,168,1,121)
+//#define BROKER_ADDR IPAddress(192,168,1,121)
+#define BROKER_HOSTNAME "MQTTBROKER"
 
 HADevice device(mac, sizeof(mac));
 HAMqtt mqtt(client, device, 15);
@@ -2856,9 +2857,9 @@ void setupMQTT()
 void beginMQTT()
 {
 #   if defined MQTTUSER && defined MQTTPASSWORD
-      mqtt.begin(BROKER_ADDR, MQTTUSER, MQTTPASSWORD);
+      mqtt.begin(/* BROKER_ADDR */ BROKER_HOSTNAME, MQTTUSER, MQTTPASSWORD);
 #   else
-      mqtt.begin(BROKER_ADDR);
+      mqtt.begin(/* BROKER_ADDR */ BROKER_HOSTNAME);
 #   endif
 }
 
