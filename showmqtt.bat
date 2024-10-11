@@ -1,0 +1,1 @@
+"C:\Program Files\mosquitto\mosquitto_sub" -h HA -v -t "aha/543441303033/Chickenguard4UpTime/stat_t" -t "aha/543441303033/Chickenguard4TimeNow/stat_t" -t "aha/543441303033/Chickenguard4Monitor/stat_t" | c:\brol\ConsoleApplication1.exe 2>&1 | c:\brol\tee-x64.exe c:\brol\c.txt

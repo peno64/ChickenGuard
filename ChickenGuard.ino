@@ -72,6 +72,8 @@
 #define WIFISSID "<your wifi ssid>"
 #define WIFIPASSWORD "<your wifi password>"
 
+#define MQTTHOST "<your mqtt ip or name>"
+
 #define MQTTUSER "<your mqtt user>"
 #define MQTTPASSWORD "<your mqtt password>"
 
@@ -115,7 +117,7 @@ BluetoothSerial SerialBT;
 #if !defined WIFI && !defined WOKWI
 # define ETHERNETMODULE              // If defined then connect to ethernet
 #endif
-#if !defined WOKWI
+#if !defined WOKWI && defined MQTTHOST
 # define MQTTMODULE                  // If defined then compile with MQTT support - can be used via Home Assistant
 #endif
 #define NTPMODULE                   // If defined then get internet time
@@ -139,7 +141,7 @@ BluetoothSerial SerialBT;
 #endif
 
 #if !defined WOKWI && !defined ESP32
-#define TESTING 4
+//#define TESTING 4
 #endif
 
 #if TESTING == 4
@@ -2781,9 +2783,6 @@ bool setupMQTTDone = false;
 unsigned long prevMQTTCheck = 0;
 int cntMQTTCheck = 0;
 
-//#define BROKER_ADDR IPAddress(192,168,1,121)
-#define BROKER_HOSTNAME "MQTTBROKER"
-
 HADevice device(mac, sizeof(mac));
 HAMqtt mqtt(client, device, 15);
 
@@ -2857,9 +2856,9 @@ void setupMQTT()
 void beginMQTT()
 {
 #   if defined MQTTUSER && defined MQTTPASSWORD
-      mqtt.begin(/* BROKER_ADDR */ BROKER_HOSTNAME, MQTTUSER, MQTTPASSWORD);
+      mqtt.begin(MQTTHOST, MQTTUSER, MQTTPASSWORD);
 #   else
-      mqtt.begin(/* BROKER_ADDR */ BROKER_HOSTNAME);
+      mqtt.begin(MQTTHOST);
 #   endif
 }
 
