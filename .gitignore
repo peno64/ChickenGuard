@@ -4,3 +4,8 @@
 /secret.h
 /Chickenguard.ino0
 /Chickenguard.ino.old
+/build/*
+/.vscode/c_cpp_properties.json
+/.vscode/arduino.json
+/.theia/*
+/uploadOTA.txt

@@ -1,0 +1,9 @@
+{
+  "port": "COM5",
+  "configuration": "",
+  "output": "build",
+  "board": "Optiboot8:avr:megatris",
+  "programmer": "Arduino OTA (192.168.1.125)",
+  "useProgrammer": false,
+  "configurationRequired": false
+}

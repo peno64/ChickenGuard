@@ -1,0 +1,9 @@
+{
+  "port": "COM3",
+  "configuration": "UploadSpeed=921600,FlashFreq=80,PartitionScheme=min_spiffs,DebugLevel=none,EraseFlash=none",
+  "output": "build",
+  "board": "esp32:esp32:esp32doit-devkit-v1-bis",
+  "programmer": "esptool",
+  "useProgrammer": false,
+  "configurationRequired": true
+}

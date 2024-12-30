@@ -141,7 +141,7 @@ BluetoothSerial SerialBT;
 #endif
 
 #if !defined WOKWI && !defined ESP32
-//#define TESTING 4
+#define TESTING 4
 #endif
 
 #if TESTING == 4
@@ -1725,9 +1725,30 @@ void Command(String answer, bool wait, bool start)
     clearMonitor = true;
   }
 
-  else if (answer.substring(0, 2) == "AT") // current date/time arduino: dd/mm/yy hh:mm:ss
+  else if (answer.substring(0, 2) == "CT") // current date/time clock module: dd/mm/yy hh:mm:ss
   {
-#if !defined CLOCKMODULE
+#if defined CLOCKMODULE
+    if (hasCLOCKMODULE)
+    {
+      if (answer[2])
+      {
+        int day = answer.substring(2, 4).toInt();
+        int month = answer.substring(5, 7).toInt();
+        int year = answer.substring(8, 10).toInt();
+
+        int hour = answer.substring(11, 13).toInt();
+        int minute = answer.substring(14, 16).toInt();
+        int sec = answer.substring(17, 19).toInt();
+        if (day != 0 && month != 0 && year != 0)
+          setDS3231time(sec, minute, hour, 0, day, month, year);
+      }
+
+      printDS3231time();
+
+      if (logit && wait)
+        WaitForInput("Press enter to continue");
+    }
+#else // !CLOCKMODULE
     if (answer[2])
     {
       int day = answer.substring(2, 4).toInt();
@@ -1760,29 +1781,6 @@ void Command(String answer, bool wait, bool start)
     sprintf(data, "%02d/%02d/%02d %02d:%02d:%02d", (int)dayOfMonth,  (int)month, (int)year, (int)hour, (int)minute, (int)second);
     printSerialln(data);
     setMQTTMonitor(data);
-
-    if (logit && wait)
-      WaitForInput("Press enter to continue");
-#endif // !CLOCKMODULE
-  }
-
-  else if (answer.substring(0, 2) == "CT" && hasCLOCKMODULE) // current date/time clock module: dd/mm/yy hh:mm:ss
-  {
-#if defined CLOCKMODULE
-    if (answer[2])
-    {
-      int day = answer.substring(2, 4).toInt();
-      int month = answer.substring(5, 7).toInt();
-      int year = answer.substring(8, 10).toInt();
-
-      int hour = answer.substring(11, 13).toInt();
-      int minute = answer.substring(14, 16).toInt();
-      int sec = answer.substring(17, 19).toInt();
-      if (day != 0 && month != 0 && year != 0)
-        setDS3231time(sec, minute, hour, 0, day, month, year);
-    }
-
-    printDS3231time();
 
     if (logit && wait)
       WaitForInput("Press enter to continue");
@@ -2039,17 +2037,12 @@ void Command(String answer, bool wait, bool start)
     printSerialln("O: Open door");
     printSerialln("C: Close door");
     printSerialln("A: Auto door");
-    printSerialln("S(x): Reset status to x (default 0)");
+    printSerialln("S{x}: Reset status to x (default 0)");
     printSerialln("R<times>: Repeat opening and closing door");
     printSerialln("I: Info");
     printSerialln("L: Log toggle");
     printSerialln("SL: Switch LEDs");
-#if !defined CLOCKMODULE
-    printSerialln("AT<dd/mm/yy hh:mm:ss>: set arduino timer date/time");
-#endif
-#if defined CLOCKMODULE
-    printSerialln("CT<dd/mm/yy hh:mm:ss>: Set CLOCKMODULE date/time");
-#endif
+    printSerialln("CT<dd/mm/yy hh:mm:ss>: Set date/time");
 #if defined NTPMODULE
     printSerialln("SYNC: Synchronize date/time with NTP server");
 #endif
@@ -2057,8 +2050,8 @@ void Command(String answer, bool wait, bool start)
     printSerialln("T: Temperature");
 #endif
 #if defined ETHERNETMODULE || defined WIFI
-    printSerialln("IP: Print IP address");
     printSerialln("MAC: Print MAC address");
+    printSerialln("IP: Print IP address");
     printSerialln("IS: Show Ethernet status");
 #endif
     printSerialln("RESET: Reset Arduino");
@@ -2324,6 +2317,72 @@ unsigned long prevEthernetCheck = 0;
 
 #endif // OTA
 
+uint8_t BSSID[6];
+
+void wifiBegin()
+{
+  WiFi.disconnect(); // Ensure no active connection during the scan
+  delay(1000);
+
+  // Search all routers that give this SSID signal
+  // Determine the best signal
+  int numNetworks = WiFi.scanNetworks(false, false, false, 0, 300, WIFISSID);
+  int maxSignal = -1000;
+  for (int i = 0; i < numNetworks; i++) 
+  {
+    char buf[255];
+
+    sprintf(buf, "%d: SSID: %s, RRSI: %d dBm, BSSID: %02X:%02X:%02X:%02X:%02X:%02X",
+                  i + 1,
+                  WiFi.SSID(i).c_str(),
+                  WiFi.RSSI(i),
+                  WiFi.BSSID(i)[0], WiFi.BSSID(i)[1], WiFi.BSSID(i)[2],
+                  WiFi.BSSID(i)[3], WiFi.BSSID(i)[4], WiFi.BSSID(i)[5]);
+    if (WiFi.RSSI(i) > maxSignal)
+    {
+      maxSignal = WiFi.RSSI(i);
+      for (int j = 0; j < 6; j++)        
+        BSSID[j] = WiFi.BSSID(i)[j];
+    }
+    printSerialln(buf);
+  }
+
+  if (maxSignal != -1000)
+  {
+    char buf[255];
+    sprintf(buf, "Selected BSSID: %02X:%02X:%02X:%02X:%02X:%02X", BSSID[0], BSSID[1], BSSID[2], BSSID[3], BSSID[4], BSSID[5]);
+    printSerialln(buf);
+  }
+  else
+    printSerialln("SSID not found...");
+
+  WiFi.scanDelete();
+
+  if (maxSignal != -1000)
+    WiFi.begin(WIFISSID, WIFIPASSWORD, 0, BSSID);
+  else
+    WiFi.begin(WIFISSID, WIFIPASSWORD);
+
+  printSerial("Connecting WiFi");
+  unsigned long t1 = millis();
+  while (WiFi.status() != WL_CONNECTED)
+  {
+      unsigned long t2 = millis();
+      if (t2 - t1 > 5 * 60 * 1000) // try 5 minutes
+        DoReset();
+
+      delay(500);
+      printSerial(".");
+  }
+
+  printSerialln();
+  printSerialln("WiFi connected");
+
+  uint8_t* currentBSSID = WiFi.BSSID();
+  for (int j = 0; j < 6; j++)        
+    BSSID[j] = currentBSSID[j];
+}
+
 #elif defined(__AVR_ATmega328P__) || defined(__AVR_ATmega328__)
 // Nano
 #include <EthernetENC.h> // uses a bit less memory
@@ -2333,6 +2392,7 @@ unsigned long prevEthernetCheck = 0;
 #if defined OTETHERNET
 #include <SPI.h>
 #endif
+// Although Ethernet.h is already standard included I still had to install the library viar type Arduino, Ethernet by Various version 2.0.2 otherwise .begin(mac) just hangs on my new windows 11 system
 #include <Ethernet.h> // does not work with an Arduino nano and its internet shield because it uses ENC28J60 which is a different instruction set
 #if defined OTETHERNET
 #include <ArduinoOTA.h>
@@ -2363,40 +2423,22 @@ void setupEthernet()
 {
 
 #if defined WIFI
-
-  delay(10);
-
-  printSerialln();
-  printSerial("Connecting to ");
-  printSerialln((char*)WIFISSID);
-
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFISSID, WIFIPASSWORD);
-
-  unsigned long t1 = millis();
-  while (WiFi.status() != WL_CONNECTED) {
-      unsigned long t2 = millis();
-      if (t2 - t1 > 1 * 60 * 1000) // try 10 minutes
-        DoReset();
-
-      delay(500);
-      printSerial(".");
-  }
+  wifiBegin();
 
   hasEthernet = true;
 
   printSerialln();
   printSerialln("WiFi connected");
 
-  IPAddress ip = WiFi.localIP();
-
   char buf[50];
-  sprintf(buf, "IP address: %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
-
-  printSerialln(buf);
 
   WiFi.macAddress(mac);
   sprintf(buf, "MAC address: %02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  printSerialln(buf);
+
+  IPAddress ip = WiFi.localIP();
+  sprintf(buf, "IP address: %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+
   printSerialln(buf);
 
   sprintf(buf, "RRSI: %d", (int)WiFi.RSSI());
