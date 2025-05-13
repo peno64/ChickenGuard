@@ -5,5 +5,13 @@
   "board": "Optiboot8:avr:megatris",
   "programmer": "Arduino OTA (192.168.1.125)",
   "useProgrammer": false,
-  "configurationRequired": false
+  "configurationRequired": false,
+  "monitorPortSettings": {
+    "port": "COM3",
+    "baudRate": 9600,
+    "lineEnding": "\r\n",
+    "dataBits": 8,
+    "parity": "none",
+    "stopBits": "one"
+  }  
 }

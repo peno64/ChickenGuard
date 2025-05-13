@@ -3,7 +3,15 @@
   "configuration": "UploadSpeed=921600,FlashFreq=80,PartitionScheme=min_spiffs,DebugLevel=none,EraseFlash=none",
   "output": "build",
   "board": "esp32:esp32:esp32doit-devkit-v1-bis",
-  "programmer": "esptool",
+  "programmer": "Esptool",
   "useProgrammer": false,
-  "configurationRequired": true
+  "configurationRequired": true,
+  "monitorPortSettings": {
+    "port": "COM3",
+    "baudRate": 115200,
+    "lineEnding": "\r\n",
+    "dataBits": 8,
+    "parity": "none",
+    "stopBits": "one"
+  }
 }
