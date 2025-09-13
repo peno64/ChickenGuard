@@ -1,0 +1,1 @@
+"C:\Users\mail\AppData\Local\Arduino15\packages\Optiboot8/tools/arduinoOTA.exe" -address 192.168.1.125 -port 65280 -t 30 -username arduino -password password -sketch "c:\git\ChickenGuard\build/ChickenGuard.ino.bin" -upload /sketch -b

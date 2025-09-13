@@ -2459,9 +2459,9 @@ void setupEthernet()
     prevEthernetCheck = 0;
 
   printSerial("Done Ethernet: ");
-  printSerial(hasEthernet ? "OK" : "NOK: ");
+  printSerial((char *)(hasEthernet ? "OK" : "NOK: "));
   if (!hasEthernet)
-    printSerial(ret);
+    printSerialInt(ret);
   printSerialln();
   printSerial("MAC: ");
   printLocalMAC();
@@ -3264,7 +3264,7 @@ struct tm *GetNTP(const char *address)
   int size;
 
   printSerial("Getting NTP date/time via ");
-  printSerial(address);
+  printSerial((char *)address);
   printSerial(" ...");
 
   while ((size = Udp.parsePacket()) > 0)
@@ -3302,11 +3302,11 @@ struct tm *GetNTP(const char *address)
       // subtract seventy years:
       unsigned long epoch = secsSince1900 - seventyYears;
 
-#     if defined ESP32
+//#     if defined ESP32
         time_t unixTime;
-#     else
-        unsigned long unixTime;
-#     endif
+//#     else
+//        unsigned long unixTime;
+//#     endif
 
       unixTime = epoch - UNIX_OFFSET;
       unixTime += 1L * 60L * 60L; // GMT+1
