@@ -1,0 +1,13 @@
+# Gitignore settings for ESPHome
+# This is an example and may include too much for your use-case.
+# You can modify this file to suit your needs.
+/secret.h
+/Chickenguard.ino0
+/Chickenguard.ino.old
+/build/*
+/.vscode/c_cpp_properties.json
+/.vscode/arduino.json
+!/.vscode/arduino.mega.json
+!/.vscode/arduino.ESP32DEVKITV1.json
+/.theia/*
+/uploadOTA.txt
