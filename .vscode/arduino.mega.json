@@ -13,5 +13,5 @@
     "dataBits": 8,
     "parity": "none",
     "stopBits": "one"
-  }  
+  }
 }

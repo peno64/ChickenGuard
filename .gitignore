@@ -7,5 +7,7 @@
 /build/*
 /.vscode/c_cpp_properties.json
 /.vscode/arduino.json
+!/.vscode/arduino.mega.json
+!/.vscode/arduino.ESP32DEVKITV1.json
 /.theia/*
 /uploadOTA.txt
