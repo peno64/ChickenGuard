@@ -325,7 +325,7 @@ struct
 } changeableData[] =
 {
   { "ldrMorning", &ldrMorning, 600 },
-  { "ldrEvening", &ldrEvening, 400 },
+  { "ldrEvening", &ldrEvening, 800 },
   { "motorPWM", &motorPWM, 255 }, // 255 = full speed
   { "openMilliseconds", &openMilliseconds, 1400 },
   { "closeMilliseconds", &closeMilliseconds, 4000 },
@@ -1047,7 +1047,7 @@ int ProcessDoor(bool mayOpen, bool log)
     readDS3231time(&secondOpened2, &minuteOpened2, &hourOpened2, NULL, NULL, NULL, NULL);
 #endif
 
-  char *ptr = (char *)(status == 0 ? isClosed ? "Door closed" : "Door open" : status == 1 ? "Door should be open but is still closed" : status == 2 ? "Door not closed after timeout" : "Door not closed after 10 tries to tighten");
+  char *ptr = (char *)(status == 0 ? isClosed ? keepClosed ? "Door forced closed" : isClosed && !isClosedByMotor ? "Door manually closed" : "Door closed" : keepOpen ? "Door forced open" : "Door open" : status == 1 ? "Door should be open but is still closed" : status == 2 ? "Door not closed after timeout" : "Door not closed after 10 tries to tighten");
 
   if (status != 0)
   {
@@ -1070,25 +1070,25 @@ int ProcessDoor(bool mayOpen, bool log)
     ;
 
   // If the average is less than ldrEvening and the door is not closed then close it
-  else if (average <= ldrEvening && !isClosed)
+  else if (average <= ldrEvening && !isClosed && (average == ldrCloseNow || average < min(ldrEvening, ldrMorning) || Afternoon()))
   {
     Close(log);
     ret = motorClosePin;
   }
 
   // If the average is greater than ldrMorning and the door may open and it is closed and it may open by time then open it
-  else if (average >= ldrMorning && isClosed && (average == ldrOpenNow || (mayOpen && MayOpen(0))))
+  else if (average >= ldrMorning && isClosed && (average == ldrOpenNow || average > max(ldrEvening, ldrMorning) || Beforenoon()) && (average == ldrOpenNow || (mayOpen && MayOpen(0))))
   {
     Open(log);
     ret = motorOpenPin;
   }
 
   // Else if the minimum ldr value is smaller than ldrEvening, but the average isn't (yet) and the door is not closed (open) then it is about time to close it
-  else if (minimum <= ldrEvening && !isClosed)
+  else if (minimum <= ldrEvening && average > ldrEvening && !isClosed && Afternoon())
     ret = ledClosedPin;
 
   // Else if the maximum ldr value is greater than ldrMorning, but the average isn't (yet) and the door is closed and the time is later than a couple of minutes before may open then it is about time to open it
-  else if (maximum >= ldrMorning && isClosed && MayOpen(-nMeasures / 2))
+  else if (maximum >= ldrMorning && average < ldrMorning && isClosed && Beforenoon() && MayOpen(-nMeasures / 2))
     ret = ledOpenedPin;
 
   if (keepOpen || keepClosed)
@@ -1106,6 +1106,22 @@ int ProcessDoor(bool mayOpen, bool log)
   setMQTTTime();
 
   return ret;
+}
+
+bool Beforenoon()
+{
+  int hour, minute, second;
+  GetTime(hour, minute, second);
+
+  return hour < 12;
+}
+
+bool Afternoon()
+{
+  int hour, minute, second;
+  GetTime(hour, minute, second);
+
+  return hour < 0 || hour >= 12;
 }
 
 // Check if the current time is later than the may open time - deltaMinutes
