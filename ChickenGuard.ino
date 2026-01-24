@@ -126,6 +126,7 @@ BluetoothSerial SerialBT;
 # define SERIAL1                    // If defined then also communicate via Serial1 (Bluetooth in my case)
 #endif
 //#define CONTROLBUILTIN              // If set then set the BUILTIN LED
+//#define MQTTDEBUG
 
 #if !defined ETHERNETMODULE && !defined WIFI
 # undef MQTTMODULE                  // MQTT can't work without internet
@@ -325,7 +326,7 @@ struct
 } changeableData[] =
 {
   { "ldrMorning", &ldrMorning, 600 },
-  { "ldrEvening", &ldrEvening, 400 },
+  { "ldrEvening", &ldrEvening, 800 },
   { "motorPWM", &motorPWM, 255 }, // 255 = full speed
   { "openMilliseconds", &openMilliseconds, 1400 },
   { "closeMilliseconds", &closeMilliseconds, 4000 },
@@ -677,11 +678,11 @@ void setup(void)
     }
 
     delay(1000);
-  }  
+  }
 
   logit = false;
 
-  printSerialln("Starting");  
+  printSerialln("Starting");
 
   loopEthernet();
   loopMQTT(false);
@@ -1047,7 +1048,7 @@ int ProcessDoor(bool mayOpen, bool log)
     readDS3231time(&secondOpened2, &minuteOpened2, &hourOpened2, NULL, NULL, NULL, NULL);
 #endif
 
-  char *ptr = (char *)(status == 0 ? isClosed ? "Door closed" : "Door open" : status == 1 ? "Door should be open but is still closed" : status == 2 ? "Door not closed after timeout" : "Door not closed after 10 tries to tighten");
+  char *ptr = (char *)(status == 0 ? isClosed ? keepClosed ? "Door forced closed" : isClosed && !isClosedByMotor ? "Door manually closed" : "Door closed" : keepOpen ? "Door forced open" : "Door open" : status == 1 ? "Door should be open but is still closed" : status == 2 ? "Door not closed after timeout" : "Door not closed after 10 tries to tighten");
 
   if (status != 0)
   {
@@ -1070,25 +1071,25 @@ int ProcessDoor(bool mayOpen, bool log)
     ;
 
   // If the average is less than ldrEvening and the door is not closed then close it
-  else if (average <= ldrEvening && !isClosed)
+  else if (average <= ldrEvening && !isClosed && (average == ldrCloseNow || average < min(ldrEvening, ldrMorning) || Afternoon()))
   {
+    ret = isClosedByMotor /* was already closed => close again */ ? -motorClosePin : motorClosePin;
     Close(log);
-    ret = motorClosePin;
   }
 
   // If the average is greater than ldrMorning and the door may open and it is closed and it may open by time then open it
-  else if (average >= ldrMorning && isClosed && (average == ldrOpenNow || (mayOpen && MayOpen(0))))
+  else if (average >= ldrMorning && isClosed && (average == ldrOpenNow || average > max(ldrEvening, ldrMorning) || Beforenoon()) && (average == ldrOpenNow || (mayOpen && MayOpen(0))))
   {
     Open(log);
     ret = motorOpenPin;
   }
 
   // Else if the minimum ldr value is smaller than ldrEvening, but the average isn't (yet) and the door is not closed (open) then it is about time to close it
-  else if (minimum <= ldrEvening && !isClosed)
+  else if (minimum <= ldrEvening && average > ldrEvening && !isClosed && Afternoon())
     ret = ledClosedPin;
 
   // Else if the maximum ldr value is greater than ldrMorning, but the average isn't (yet) and the door is closed and the time is later than a couple of minutes before may open then it is about time to open it
-  else if (maximum >= ldrMorning && isClosed && MayOpen(-nMeasures / 2))
+  else if (maximum >= ldrMorning && average < ldrMorning && isClosed && Beforenoon() && MayOpen(-nMeasures / 2))
     ret = ledOpenedPin;
 
   if (keepOpen || keepClosed)
@@ -1097,6 +1098,8 @@ int ProcessDoor(bool mayOpen, bool log)
     ptr = "Door opening";
   else if (ret == motorClosePin)
     ptr = "Door closing";
+  else if (ret == -motorClosePin)
+    ptr = "Door re-closing";
   else if (ret == ledOpenedPin)
     ptr = "Door closed, about time to open it";
   else if (ret == ledClosedPin)
@@ -1105,7 +1108,25 @@ int ProcessDoor(bool mayOpen, bool log)
   setMQTTDoorStatus(ptr);
   setMQTTTime();
 
+  loopMQTT(false);
+
   return ret;
+}
+
+bool Beforenoon()
+{
+  int hour, minute, second;
+  GetTime(hour, minute, second);
+
+  return hour < 12;
+}
+
+bool Afternoon()
+{
+  int hour, minute, second;
+  GetTime(hour, minute, second);
+
+  return hour < 0 || hour >= 12;
 }
 
 // Check if the current time is later than the may open time - deltaMinutes
@@ -1147,7 +1168,7 @@ void loop(void)
   loopEthernet();
   loopMQTT(false);
   loopOTA();
-  loopOTETHERNET();  
+  loopOTETHERNET();
 
   unsigned long CurrentTime = millis();
 
@@ -2328,7 +2349,7 @@ void wifiBegin()
   // Determine the best signal
   int numNetworks = WiFi.scanNetworks(false, false, false, 0, 300, WIFISSID);
   int maxSignal = -1000;
-  for (int i = 0; i < numNetworks; i++) 
+  for (int i = 0; i < numNetworks; i++)
   {
     char buf[255];
 
@@ -2341,7 +2362,7 @@ void wifiBegin()
     if (WiFi.RSSI(i) > maxSignal)
     {
       maxSignal = WiFi.RSSI(i);
-      for (int j = 0; j < 6; j++)        
+      for (int j = 0; j < 6; j++)
         BSSID[j] = WiFi.BSSID(i)[j];
     }
     printSerialln(buf);
@@ -2379,7 +2400,7 @@ void wifiBegin()
   printSerialln("WiFi connected");
 
   uint8_t* currentBSSID = WiFi.BSSID();
-  for (int j = 0; j < 6; j++)        
+  for (int j = 0; j < 6; j++)
     BSSID[j] = currentBSSID[j];
 }
 
@@ -2459,9 +2480,9 @@ void setupEthernet()
     prevEthernetCheck = 0;
 
   printSerial("Done Ethernet: ");
-  printSerial(hasEthernet ? "OK" : "NOK: ");
+  printSerial((char *)(hasEthernet ? "OK" : "NOK: "));
   if (!hasEthernet)
-    printSerial(ret);
+    printSerialInt(ret);
   printSerialln();
   printSerial("MAC: ");
   printLocalMAC();
@@ -2988,7 +3009,7 @@ void setMQTTDoorStatus(char *msg)
 #endif
 #if defined MQTTDEBUG
   printSerial(">>>MQTT DoorStatus: ");
-  printSerialln(msg);
+  printSerial(msg);
   printSerialln("<<<");
 #endif
 }
@@ -3009,7 +3030,6 @@ void setMQTTLDR(int ldr)
 #if defined MQTTDEBUG
   printSerial(">>>MQTT LDR: ");
   printSerialInt(ldr);
-  printSerialln();
   printSerialln("<<<");
 #endif
 }
@@ -3030,7 +3050,6 @@ void setMQTTLDRavg(int average)
 #if defined MQTTDEBUG
   printSerial(">>>MQTT LDRAvg: ");
   printSerialInt(average);
-  printSerialln();
   printSerialln("<<<");
 #endif
 }
@@ -3053,7 +3072,6 @@ void setMQTTTemperature()
 #if defined MQTTDEBUG
   printSerial(">>>MQTT Temperature: ");
   printSerialInt(readTemperature());
-  printSerialln();
   printSerialln("<<<");
 #endif
 }
@@ -3068,7 +3086,7 @@ void setMQTTMonitor(char *msg)
 #endif
 #if defined MQTTDEBUG
   printSerial(">>>MQTT Monitor: ");
-  printSerialln(msg);
+  printSerial(msg);
   printSerialln("<<<");
 #endif
 }
@@ -3083,13 +3101,13 @@ void setMQTTWaterStatus(char *msg)
     {
       strncpy(prevWaterStatus, msg, sizeof(prevWaterStatus));
       chickenguardWaterStatus.setValue(msg);
-    }    
+    }
   }
-    
+
 #endif
 #if defined MQTTDEBUG
   printSerial(">>>MQTT WaterStatus: ");
-  printSerialln(msg);
+  printSerial(msg);
   printSerialln("<<<");
 #endif
 }
@@ -3107,7 +3125,7 @@ void setMQTTUpTime()
 #endif
 #if defined MQTTDEBUG
   printSerial(">>>MQTT UpTime: ");
-  printSerialln(buf);
+  printSerial(buf);
   printSerialln("<<<");
 #endif
 
@@ -3264,7 +3282,7 @@ struct tm *GetNTP(const char *address)
   int size;
 
   printSerial("Getting NTP date/time via ");
-  printSerial(address);
+  printSerial((char *)address);
   printSerial(" ...");
 
   while ((size = Udp.parsePacket()) > 0)
@@ -3302,11 +3320,11 @@ struct tm *GetNTP(const char *address)
       // subtract seventy years:
       unsigned long epoch = secsSince1900 - seventyYears;
 
-#     if defined ESP32
+//#     if defined ESP32
         time_t unixTime;
-#     else
-        unsigned long unixTime;
-#     endif
+//#     else
+//        unsigned long unixTime;
+//#     endif
 
       unixTime = epoch - UNIX_OFFSET;
       unixTime += 1L * 60L * 60L; // GMT+1
@@ -3469,7 +3487,7 @@ void SyncDateTime()
 #endif
 
   for (int i = 0; i < 60; i++)
-  {    
+  {
     struct tm *time_info = GetNTP(timeServers[i % (sizeof(timeServers) / sizeof(*timeServers))]);
     printNTP(time_info);
     if (time_info != NULL)

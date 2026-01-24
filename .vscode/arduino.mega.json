@@ -1,10 +1,10 @@
 {
-  "port": "COM5",
+  "port": "Arduino at 192.168.1.125",
   "configuration": "",
   "output": "build",
   "board": "Optiboot8:avr:megatris",
-  "programmer": "Arduino OTA (192.168.1.125)",
-  "useProgrammer": false,
+  "programmer": "arduinoOTA125",
+  "useProgrammer": true,
   "configurationRequired": false,
   "monitorPortSettings": {
     "port": "COM3",
@@ -13,5 +13,6 @@
     "dataBits": 8,
     "parity": "none",
     "stopBits": "one"
-  }
+  },
+  "optimize_for_debug": false
 }
