@@ -15,3 +15,15 @@ closeMilliseconds = 4000
 closeWaitTime1 = 10000
 closeWaitTime2 = 4000
 closeWaitTime3 = 40
+
+
+Current:
+
+motorPWM = 255
+openMilliseconds = 1400
+closeMilliseconds = 4000
+closeWaitTime1 = 10000
+closeWaitTime2 = 4000
+closeWaitTime3 = 40
+ldrMorning = 700
+ldrEvening = 700
