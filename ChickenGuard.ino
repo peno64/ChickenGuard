@@ -126,6 +126,7 @@ BluetoothSerial SerialBT;
 # define SERIAL1                    // If defined then also communicate via Serial1 (Bluetooth in my case)
 #endif
 //#define CONTROLBUILTIN              // If set then set the BUILTIN LED
+//#define MQTTDEBUG
 
 #if !defined ETHERNETMODULE && !defined WIFI
 # undef MQTTMODULE                  // MQTT can't work without internet
@@ -677,11 +678,11 @@ void setup(void)
     }
 
     delay(1000);
-  }  
+  }
 
   logit = false;
 
-  printSerialln("Starting");  
+  printSerialln("Starting");
 
   loopEthernet();
   loopMQTT(false);
@@ -1072,8 +1073,8 @@ int ProcessDoor(bool mayOpen, bool log)
   // If the average is less than ldrEvening and the door is not closed then close it
   else if (average <= ldrEvening && !isClosed && (average == ldrCloseNow || average < min(ldrEvening, ldrMorning) || Afternoon()))
   {
+    ret = isClosedByMotor /* was already closed => close again */ ? -motorClosePin : motorClosePin;
     Close(log);
-    ret = motorClosePin;
   }
 
   // If the average is greater than ldrMorning and the door may open and it is closed and it may open by time then open it
@@ -1097,6 +1098,8 @@ int ProcessDoor(bool mayOpen, bool log)
     ptr = "Door opening";
   else if (ret == motorClosePin)
     ptr = "Door closing";
+  else if (ret == -motorClosePin)
+    ptr = "Door re-closing";
   else if (ret == ledOpenedPin)
     ptr = "Door closed, about time to open it";
   else if (ret == ledClosedPin)
@@ -1104,6 +1107,8 @@ int ProcessDoor(bool mayOpen, bool log)
 
   setMQTTDoorStatus(ptr);
   setMQTTTime();
+
+  loopMQTT(false);
 
   return ret;
 }
@@ -1163,7 +1168,7 @@ void loop(void)
   loopEthernet();
   loopMQTT(false);
   loopOTA();
-  loopOTETHERNET();  
+  loopOTETHERNET();
 
   unsigned long CurrentTime = millis();
 
@@ -2344,7 +2349,7 @@ void wifiBegin()
   // Determine the best signal
   int numNetworks = WiFi.scanNetworks(false, false, false, 0, 300, WIFISSID);
   int maxSignal = -1000;
-  for (int i = 0; i < numNetworks; i++) 
+  for (int i = 0; i < numNetworks; i++)
   {
     char buf[255];
 
@@ -2357,7 +2362,7 @@ void wifiBegin()
     if (WiFi.RSSI(i) > maxSignal)
     {
       maxSignal = WiFi.RSSI(i);
-      for (int j = 0; j < 6; j++)        
+      for (int j = 0; j < 6; j++)
         BSSID[j] = WiFi.BSSID(i)[j];
     }
     printSerialln(buf);
@@ -2395,7 +2400,7 @@ void wifiBegin()
   printSerialln("WiFi connected");
 
   uint8_t* currentBSSID = WiFi.BSSID();
-  for (int j = 0; j < 6; j++)        
+  for (int j = 0; j < 6; j++)
     BSSID[j] = currentBSSID[j];
 }
 
@@ -3004,7 +3009,7 @@ void setMQTTDoorStatus(char *msg)
 #endif
 #if defined MQTTDEBUG
   printSerial(">>>MQTT DoorStatus: ");
-  printSerialln(msg);
+  printSerial(msg);
   printSerialln("<<<");
 #endif
 }
@@ -3025,7 +3030,6 @@ void setMQTTLDR(int ldr)
 #if defined MQTTDEBUG
   printSerial(">>>MQTT LDR: ");
   printSerialInt(ldr);
-  printSerialln();
   printSerialln("<<<");
 #endif
 }
@@ -3046,7 +3050,6 @@ void setMQTTLDRavg(int average)
 #if defined MQTTDEBUG
   printSerial(">>>MQTT LDRAvg: ");
   printSerialInt(average);
-  printSerialln();
   printSerialln("<<<");
 #endif
 }
@@ -3069,7 +3072,6 @@ void setMQTTTemperature()
 #if defined MQTTDEBUG
   printSerial(">>>MQTT Temperature: ");
   printSerialInt(readTemperature());
-  printSerialln();
   printSerialln("<<<");
 #endif
 }
@@ -3084,7 +3086,7 @@ void setMQTTMonitor(char *msg)
 #endif
 #if defined MQTTDEBUG
   printSerial(">>>MQTT Monitor: ");
-  printSerialln(msg);
+  printSerial(msg);
   printSerialln("<<<");
 #endif
 }
@@ -3099,13 +3101,13 @@ void setMQTTWaterStatus(char *msg)
     {
       strncpy(prevWaterStatus, msg, sizeof(prevWaterStatus));
       chickenguardWaterStatus.setValue(msg);
-    }    
+    }
   }
-    
+
 #endif
 #if defined MQTTDEBUG
   printSerial(">>>MQTT WaterStatus: ");
-  printSerialln(msg);
+  printSerial(msg);
   printSerialln("<<<");
 #endif
 }
@@ -3123,7 +3125,7 @@ void setMQTTUpTime()
 #endif
 #if defined MQTTDEBUG
   printSerial(">>>MQTT UpTime: ");
-  printSerialln(buf);
+  printSerial(buf);
   printSerialln("<<<");
 #endif
 
@@ -3485,7 +3487,7 @@ void SyncDateTime()
 #endif
 
   for (int i = 0; i < 60; i++)
-  {    
+  {
     struct tm *time_info = GetNTP(timeServers[i % (sizeof(timeServers) / sizeof(*timeServers))]);
     printNTP(time_info);
     if (time_info != NULL)
