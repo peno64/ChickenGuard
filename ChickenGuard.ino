@@ -2846,6 +2846,14 @@ bool setupMQTTDone = false;
 unsigned long prevMQTTCheck = 0;
 int cntMQTTCheck = 0;
 
+char prevDoorStatus[50] = { 0 };
+char prevWaterStatus[10] = { 0 };
+char prevTimeOpened[10] = { 0 };
+char prevTimeClosed[10] = { 0 };
+int prevldr = -1;
+int prevAverage = -1;
+int prevTemperature = -274;
+
 HADevice device(mac, sizeof(mac));
 HAMqtt mqtt(client, device, 15);
 
@@ -2949,6 +2957,22 @@ void onMqttConnected()
     printSerialln(MQTTid);
 
     mqtt.subscribe(MQTTid "/#");
+
+    // Make sure values are send again to MQTT server when reconnected such that they are up to date on the MQTT server
+    if (*prevWaterStatus)
+      chickenguardWaterStatus.setValue(prevWaterStatus);
+    if (*prevDoorStatus)
+      chickenguardDoorStatus.setValue(prevDoorStatus);
+    if (prevldr != -1)
+      chickenguardLDR.setValue((int16_t)prevldr);
+    if (prevAverage != -1)
+      chickenguardLDRavg.setValue((int16_t)prevAverage);
+    if (prevTemperature != -274)
+      chickenguardTemperature.setValue((int16_t)prevTemperature);
+    if (*prevTimeClosed)
+      chickenguardTimeClosed.setValue(prevTimeClosed);
+    if (*prevTimeOpened)
+      chickenguardTimeOpened.setValue(prevTimeOpened);
 }
 
 #endif // MQTTMODULE
@@ -2999,7 +3023,6 @@ void setMQTTDoorStatus(char *msg)
 #if defined MQTTMODULE
   if (setupMQTTDone)
   {
-    static char prevDoorStatus[50] = { 0 };
     if (strncmp(prevDoorStatus, msg, sizeof(prevDoorStatus)))
     {
       strncpy(prevDoorStatus, msg, sizeof(prevDoorStatus));
@@ -3019,7 +3042,6 @@ void setMQTTLDR(int ldr)
 #if defined MQTTMODULE
   if (setupMQTTDone)
   {
-    static int prevldr = -1;
     if (ldr != prevldr)
     {
       prevldr = ldr;
@@ -3038,8 +3060,7 @@ void setMQTTLDRavg(int average)
 {
 #if defined MQTTMODULE
   if (setupMQTTDone)
-  {
-    static int prevAverage = -1;
+  {    
     if (average != prevAverage)
     {
       prevAverage = average;
@@ -3059,7 +3080,6 @@ void setMQTTTemperature()
 #if defined MQTTMODULE && defined CLOCKMODULE
   if (setupMQTTDone)
   {
-    static int prevTemperature = -274;
     int temperature = readTemperature();
     if (temperature != prevTemperature)
     {
@@ -3096,7 +3116,6 @@ void setMQTTWaterStatus(char *msg)
 #if defined MQTTMODULE
   if (setupMQTTDone)
   {
-    static char prevWaterStatus[10] = { 0 };
     if (strncmp(prevWaterStatus, msg, sizeof(prevWaterStatus)))
     {
       strncpy(prevWaterStatus, msg, sizeof(prevWaterStatus));
@@ -3163,8 +3182,7 @@ void setMQTTTime()
   ShowTime(msOpened, timeNow, buf);
 #endif
   if (setupMQTTDone)
-  {
-    static char prevTimeOpened[10] = { 0 };
+  {    
     if (strncmp(prevTimeOpened, buf, sizeof(prevTimeOpened)))
     {
       strncpy(prevTimeOpened, buf, sizeof(prevTimeOpened));
@@ -3182,7 +3200,6 @@ void setMQTTTime()
 #endif
   if (setupMQTTDone)
   {
-    static char prevTimeClosed[10] = { 0 };
     if (strncmp(prevTimeClosed, buf, sizeof(prevTimeClosed)))
     {
       strncpy(prevTimeClosed, buf, sizeof(prevTimeClosed));
