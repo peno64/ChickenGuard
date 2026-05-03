@@ -719,7 +719,20 @@ void SetStatusLed(bool on)
 // Is the door closed according to the magnetic switch
 bool IsClosed()
 {
-  return digitalRead(magnetPin) == 0;
+  // For some reason sometimes it doesn't detect closed so lets try 3 times...
+  bool isClosed;
+  isClosed = digitalRead(magnetPin) == 0;
+  if (!isClosed)
+  {
+    delay(5);
+    isClosed = digitalRead(magnetPin) == 0;
+    if (!isClosed)
+    {
+      delay(5);
+      isClosed = digitalRead(magnetPin) == 0;
+    }
+  }
+  return isClosed;
 }
 
 // stop the motor
