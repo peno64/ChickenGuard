@@ -166,6 +166,8 @@ BluetoothSerial SerialBT;
 #define MQTTid "ChickenGuard" postfix
 #define MQTTprefix "Chickenguard" postfix
 
+#define MQTTEMPTY " " // " " must be used to make sure that MQTT retains it. "" clears MQTT messages with result that a restart of home assistant would give Unknown
+
 /*
 
 Following must be added to configuration.yaml of HA:
@@ -687,7 +689,7 @@ void setup(void)
   loopEthernet();
   loopMQTT(false);
 
-  setMQTTMonitor("");
+  setMQTTMonitor(MQTTEMPTY);
   ProcessWater();
   SetLEDOpenClosed();
 
@@ -1189,7 +1191,7 @@ void loop(void)
   {
     if (clearMonitor)
     {
-      setMQTTMonitor("");
+      setMQTTMonitor(MQTTEMPTY);
       clearMonitor = false;
     }
 
@@ -1951,7 +1953,7 @@ void Command(String answer, bool wait, bool start)
   {
     logit = !logit;
     if (!logit)
-      setMQTTMonitor("");
+      setMQTTMonitor(MQTTEMPTY);
   }
 
   else if (answer.substring(0, 5) == "START") // start
@@ -2956,10 +2958,17 @@ void onMqttMessage(const char* topic, const uint8_t* payload, uint16_t length)
   if (strcmp(topic, MQTTid "/cmd") == 0)
   {
     String answer = "";
+    bool empty = true;
     for (int i = 0; i < length; i++)
-      answer = answer + (char)payload[i];
+    {
+      char c = (char)payload[i];
+      if (!isspace(c))
+        empty = false;
+      answer = answer + c;
+    }
 
-    Command(answer, false, false);
+    if (!empty)
+      Command(answer, false, false);
   }
 }
 
@@ -2970,6 +2979,7 @@ void onMqttConnected()
     printSerialln(MQTTid);
 
     mqtt.subscribe(MQTTid "/#");
+    mqtt.publish(MQTTid "/command_emptystate", MQTTEMPTY, true);
 
     // Make sure values are send again to MQTT server when reconnected such that they are up to date on the MQTT server
     if (*prevWaterStatus)
