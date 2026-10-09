@@ -1,0 +1,21 @@
+{
+  "port": "COM3",
+  "configuration": "",
+  "output": "build",
+  "board": "Optiboot8:avr:megatris",
+  "programmer": "arduinoOTA125",
+  "useProgrammer": false,
+  "configurationRequired": false,
+  "monitorPortSettings": {
+    "settings": {
+      "port": "COM3",
+      "baudRate": 115200,
+      "lineEnding": "\r\n",
+      "dataBits": 8,
+      "parity": "none",
+      "stopBits": "one"
+    },
+    "profile_name": ""
+  },
+  "optimize_for_debug": false
+}

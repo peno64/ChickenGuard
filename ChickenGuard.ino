@@ -1643,6 +1643,7 @@ void swap(int &i1, int &i2)
 
 void Command(String answer, bool wait, bool start)
 {
+  answer.trim();
   answer.toUpperCase();
 
   printSerial("Received: ");
